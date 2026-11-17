@@ -45,6 +45,20 @@ hand. Projects are saved as `.screenforge` packages.
   SRT and WebVTT export.
 - **Camera smarts**: on-device face tracking keeps you centred; DaVinci Resolve style colour
   grading and `.cube` LUTs.
+- **Details for publishing**: every export writes a title, a description (ending with the
+  chapters) and tags beside the video (`Demo.details.txt`) and shows them to copy. With the agent
+  on, Claude writes them from the transcript while the video renders; otherwise they come from
+  the project name, the opening words and the chapter titles.
+
+## Async video and Loom
+
+- **Share links** (Pro) make ScreenForge an async video tool: Export uploads the video and lists
+  the page link, the MP4, Markdown with the poster (GitHub, Notion) and an HTML embed, each with
+  a copy button. Exporting again keeps the same link.
+- **Import from Loom**: paste a `loom.com/share/…` link in the New project window (or run
+  `sf import <link>`). The video is downloaded and becomes a project named after its Loom title.
+  Public videos only ("anyone with the link"), and not ones whose owner turned downloads off.
+  Loom's camera bubble is part of its picture, so it comes in with the screen.
 
 Captions, on-device narration and face tracking run locally; the agent runs on Claude and the
 ElevenLabs voices on ElevenLabs, both through the ScreenForge backend (see `site/privacy.html` for what is sent).
