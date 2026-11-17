@@ -5,7 +5,7 @@
 // (see `verifyKey`), and the computer must still be the license's active one. A device id alone
 // is not enough, since device ids are not secret.
 //
-//   { action: "create", device, key, project?, title, bytes, poster?, width?, height?, duration_ms? }
+//   { action: "create", device, key, project?, title, description?, tags?, bytes, poster?, width?, height?, duration_ms? }
 //       Pro only → { id, url, upload: { video, poster? } }: presigned PUT URLs (video/mp4, and
 //       image/jpeg for the poster) the app uploads to, signed for exactly `bytes` / `poster` bytes.
 //       A project has one link: sharing it again uploads over the same link (same URL), whose
@@ -84,12 +84,12 @@ serve(async (req) => {
     switch (body.action) {
       case "get": {
         if (!isId(body.id)) return fail("not found", 404);
-        const { data } = await client.from("share_links").select("id, title, width, height, duration_ms, has_poster, views, created_at, rev").eq("id", body.id).eq("status", "ready").maybeSingle();
+        const { data } = await client.from("share_links").select("id, title, description, tags, width, height, duration_ms, has_poster, views, created_at, rev").eq("id", body.id).eq("status", "ready").maybeSingle();
         if (!data) return fail("not found", 404);
         // ?v=: a replaced video gets a new address, past the CDN's cached copy of the old one
         const v = data.rev ? `?v=${data.rev}` : "";
         return json({
-          id: data.id, title: data.title, url: urlFor(data.id), video: `${MEDIA_URL}/${videoKey(data.id)}${v}`,
+          id: data.id, title: data.title, description: data.description ?? null, tags: data.tags ?? [], url: urlFor(data.id), video: `${MEDIA_URL}/${videoKey(data.id)}${v}`,
           poster: data.has_poster ? `${MEDIA_URL}/${posterKey(data.id)}${v}` : null,
           width: data.width, height: data.height, duration_ms: data.duration_ms, views: data.views, created_at: data.created_at,
         });
@@ -132,7 +132,12 @@ serve(async (req) => {
         const total = (used ?? []).filter((r) => r.id !== existing?.id).reduce((n, r) => n + Number(r.bytes), 0);
         if (total + bytes > MAX_ACCOUNT_BYTES) return fail(`Your share links use ${(total / 1024 ** 3).toFixed(1)} GB of ${(MAX_ACCOUNT_BYTES / 1024 ** 3).toFixed(0)} GB. Contact ScreenForge support to remove old links, then try again.`, 413);
         const int = (v: unknown) => (Number.isInteger(v) && (v as number) > 0 && (v as number) < 2 ** 31 ? v as number : null);
-        const fields = { device_id: body.device, title: String(body.title ?? "").slice(0, 200), width: int(body.width), height: int(body.height), duration_ms: int(body.duration_ms), pending_bytes: bytes, updated_at: new Date().toISOString() };
+        // the export's details: a description (chapters at its end) and tags; an app without
+        // them sends none, which leaves what a link had
+        const details: Record<string, unknown> = {};
+        if (typeof body.description === "string") details.description = body.description.trim().slice(0, 5000) || null;
+        if (Array.isArray(body.tags)) details.tags = body.tags.filter((t: unknown) => typeof t === "string" && t.trim()).map((t: string) => t.trim().slice(0, 60)).slice(0, 15);
+        const fields = { ...details, device_id: body.device, title: String(body.title ?? "").slice(0, 200), width: int(body.width), height: int(body.height), duration_ms: int(body.duration_ms), pending_bytes: bytes, updated_at: new Date().toISOString() };
         let id: string;
         if (existing) {
           // the page keeps playing the old video (status stays) until `complete`
