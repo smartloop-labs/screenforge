@@ -18,6 +18,7 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 which = "7"
 image.workspace = true
+ureq = { version = "2", features = ["json"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = { version = "11", features = ["macos_14_0"] }

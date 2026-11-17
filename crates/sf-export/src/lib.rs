@@ -175,6 +175,30 @@ fn exported_chapters(session: &Session, start: f64, end: f64) -> Vec<sf_engine::
     sf_engine::chapters::in_range(&sf_engine::chapters::placed(scene, &session.timeline), start, end)
 }
 
+/// What an export of `[start, end)` of the timeline (all of it for `None`) is described from:
+/// the project's name, the words said in it, and its chapters.
+pub fn details_input(session: &Session, range_ms: Option<(f64, f64)>) -> sf_engine::details::Input {
+    let duration = session.duration_ms();
+    let (start, end) = range_ms.map(|(a, b)| (a.max(0.0), b.min(duration))).unwrap_or((0.0, duration));
+    let words: Vec<sf_engine::captions::Word> = session.captions.lines.iter().flat_map(|l| l.words.iter().cloned()).collect();
+    let chapters = exported_chapters(session, start, end);
+    let chapter_list = if chapters.is_empty() { String::new() } else { sf_engine::chapters::youtube(&chapters, end - start).text };
+    sf_engine::details::Input {
+        name: session.pkg.project.name.clone(),
+        transcript: sf_engine::details::transcript_text(&words, &session.timeline, start, end),
+        chapters: chapters.iter().map(|c| c.title.trim().to_string()).collect(),
+        chapter_list,
+        duration_ms: end - start,
+    }
+}
+
+/// Where an export's title, description and tags are written: beside the video,
+/// `Demo.mp4` → `Demo.details.txt`.
+pub fn details_txt_path(video: &std::path::Path) -> PathBuf {
+    let stem = video.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "export".into());
+    video.with_file_name(format!("{stem}.details.txt"))
+}
+
 /// Where an export's chapter list for a YouTube description is written: beside the video,
 /// `Demo.mp4` → `Demo.chapters.txt`.
 pub fn chapters_txt_path(video: &std::path::Path) -> PathBuf {

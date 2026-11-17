@@ -103,7 +103,8 @@ enum Cmd {
     Chapters { path: PathBuf },
     /// Re-save a package (useful to migrate v3 → v4 on disk). Writes project.json.bak first.
     Resave { path: PathBuf },
-    /// Copy a .screenstudio package into a folder as a .screenforge package (the original is untouched)
+    /// Copy a .screenstudio package into a folder as a .screenforge package (the original is
+    /// untouched), or download a public Loom video (a loom.com/share/… link) as a new project
     Import {
         path: PathBuf,
         /// Destination folder (default: ~/ScreenForge Projects)
@@ -185,6 +186,11 @@ fn main() -> Result<()> {
             if modified(&txt).zip(modified(&result)).is_some_and(|(t, v)| t >= v) {
                 eprintln!("wrote {} (chapters for a YouTube description)", txt.display());
             }
+            // title, description and tags from the template (the app asks Claude when AI is on)
+            let details = sf_engine::details::template(&sf_export::details_input(&session, opts.range_ms));
+            let dtxt = sf_export::details_txt_path(&result);
+            std::fs::write(&dtxt, details.to_text())?;
+            eprintln!("wrote {} (title, description and tags)", dtxt.display());
             Ok(())
         }
         Cmd::Presets { folder } => {
@@ -277,6 +283,12 @@ fn main() -> Result<()> {
             println!("saved {} (migrated: {})", path.display(), pkg.migrated);
             Ok(())
         }
+        Cmd::Import { path, to } if sf_recording::loom::is_link(&path.to_string_lossy()) => {
+            let folder = to.unwrap_or_else(sf_session::create::default_projects_folder);
+            let dest = import_loom(&path.to_string_lossy(), &folder)?;
+            println!("imported {} as {}", path.display(), dest.display());
+            Ok(())
+        }
         Cmd::Import { path, to } => {
             let folder = to.unwrap_or_else(sf_session::create::default_projects_folder);
             let dest = sf_project::package::import_screen_studio(&path, &folder)?;
@@ -289,6 +301,26 @@ fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Download a Loom share link and make a project of it in `folder` (named after the video).
+fn import_loom(link: &str, folder: &std::path::Path) -> Result<PathBuf> {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let work = std::env::temp_dir().join(format!("sf-loom-{}-{}", std::process::id(), chrono::Local::now().format("%Y%m%d%H%M%S")));
+    let result = (|| -> Result<PathBuf> {
+        let file = sf_recording::loom::download(link, &work.join("download"), |f| {
+            eprint!("\rdownloading {:5.1}%", f * 100.0);
+            let _ = std::io::stderr().flush();
+        }, &cancel)?;
+        eprintln!();
+        let name = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Loom video".into());
+        let rec = work.join("recording");
+        sf_recording::import::import_video(&file, &rec, |_| {}, &cancel)?;
+        let opts = sf_session::create::CreateOptions { name, projects_folder: folder.to_path_buf(), default_config: None, create_automatic_zooms: false, markers_ms: vec![], device_mockup: false };
+        Ok(sf_session::create::create_project_from_recording(&rec, opts)?.path)
+    })();
+    let _ = std::fs::remove_dir_all(&work);
+    result
 }
 
 fn inspect(path: &std::path::Path, json: bool) -> Result<()> {

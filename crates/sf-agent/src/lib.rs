@@ -12,6 +12,7 @@
 pub mod activity;
 pub mod agent;
 mod chapters;
+pub mod details;
 pub mod client;
 pub mod host;
 mod items;

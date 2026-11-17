@@ -294,9 +294,9 @@ impl RecordingScreen {
 
     /// Draw the countdown / HUD into the floating window. Returns what to do next.
     ///
-    /// Styled like a tape recorder (bordered keys, a display window holding the REC light, the
-    /// timer and, with a microphone, a level equalizer), drawn flat on the same frosted glass
-    /// as the main toolbar so it follows the theme.
+    /// A small bar like Loom's: the red stop button with the time beside it (and a microphone
+    /// level when one is recording), then plain icon buttons for pause, marker, restart and
+    /// delete. Drawn on the same frosted glass as the main toolbar so it follows the theme.
     pub fn ui(&mut self, ui: &mut Ui, ctx: &egui::Context) -> RecordingOutcome {
         let full = ui.max_rect();
         if let Some(b) = self.camera.as_mut() {
@@ -309,7 +309,7 @@ impl RecordingScreen {
         let pal = theme::p();
         let t = ui.input(|i| i.time);
 
-        // microphone level history for the equalizer (newest last)
+        // microphone level history for the meter (newest last)
         let level = match &self.phase {
             Phase::Recording(rec) => rec.microphone_level(),
             _ => None,
@@ -318,36 +318,35 @@ impl RecordingScreen {
             if t - self.level_sampled_at >= 0.06 {
                 self.level_sampled_at = t;
                 self.levels.push_back(l);
-                while self.levels.len() > EQ_BARS {
+                while self.levels.len() > METER_BARS {
                     self.levels.pop_front();
                 }
             }
         }
-        let has_eq = self.req.microphone.is_some();
-        ctx.request_repaint_after(std::time::Duration::from_millis(if has_eq { 50 } else { 100 }));
+        let has_mic = self.req.microphone.is_some();
+        ctx.request_repaint_after(std::time::Duration::from_millis(if has_mic { 50 } else { 100 }));
 
-        // pill: [stop] [lcd] [keys…]
-        let key = vec2(36.0, 40.0);
-        let lcd_w = match self.phase {
-            Phase::Recording(_) => if has_eq { 196.0 } else { 150.0 },
-            _ => 230.0,
+        // bar: [stop] time [meter] | [pause] [marker] [restart] [delete]
+        let (stop_w, time_w, meter_w) = (BTN, 58.0, if has_mic { 22.0 } else { 0.0 });
+        let inner_w = match self.phase {
+            Phase::Recording(_) => stop_w + 10.0 + time_w + meter_w + GAP + 1.0 + GAP + 4.0 * BTN + 3.0 * 2.0,
+            Phase::Countdown { .. } => stop_w + 10.0 + 170.0 + GAP + 64.0,
+            Phase::Finishing => 140.0,
         };
-        let keys_w = match self.phase {
-            Phase::Recording(_) => 4.0 * key.x + 3.0 * 4.0,
-            _ => 84.0,
-        };
-        let pill_w = 12.0 + 40.0 + 8.0 + lcd_w + 8.0 + keys_w + 12.0;
-        let pill = egui::Rect::from_center_size(pos2(full.center().x, full.bottom() - 10.0 - 29.0), vec2(pill_w, 58.0));
+        let bar = egui::Rect::from_center_size(pos2(full.center().x, full.bottom() - 10.0 - BAR_H / 2.0), vec2(inner_w + 2.0 * PAD, BAR_H));
         let painter = ui.painter().clone();
-        self.hud_rect = pill;
-        crate::vibrancy::set(Some([pill.left(), pill.top(), pill.width(), pill.height()]), full.height(), crate::picker::PILL_RADIUS);
+        self.hud_rect = bar;
+        crate::vibrancy::set(Some([bar.left(), bar.top(), bar.width(), bar.height()]), full.height(), crate::picker::PILL_RADIUS);
         let tint = if crate::vibrancy::is_active() { pal.glass } else { pal.glass_solid };
-        painter.rect(pill, CornerRadius::same(crate::picker::PILL_RADIUS as u8), tint, Stroke::new(1.0, pal.glass_border), egui::StrokeKind::Inside);
-        let cy = pill.center().y;
-        let stop_rect = egui::Rect::from_min_size(pos2(pill.left() + 12.0, cy - 20.0), vec2(40.0, 40.0));
-        let lcd = egui::Rect::from_min_size(pos2(stop_rect.right() + 8.0, cy - 20.0), vec2(lcd_w, 40.0));
-        let keys_left = lcd.right() + 8.0;
-        lcd_window(&painter, lcd);
+        painter.rect(bar, CornerRadius::same(crate::picker::PILL_RADIUS as u8), tint, Stroke::new(1.0, pal.glass_border), egui::StrokeKind::Inside);
+        let cy = bar.center().y;
+        let mut x = bar.left() + PAD;
+        // the next `w` wide slot along the bar, then `gap` after it
+        let next = |x: &mut f32, w: f32, gap: f32| {
+            let r = egui::Rect::from_min_size(pos2(*x, cy - BTN / 2.0), vec2(w, BTN));
+            *x += w + gap;
+            r
+        };
 
         match &mut self.phase {
             Phase::Countdown { until, total_ms } => {
@@ -360,18 +359,18 @@ impl RecordingScreen {
                     }
                     return RecordingOutcome::Continue;
                 }
-                // stop key stands idle; the LCD counts down
-                tape_key(ui, stop_rect, "stop-idle", None, |p, r| paint_stop_glyph(p, r, pal.text_faint), "");
-                rec_light(&painter, pos2(lcd.left() + 14.0, cy), (t * 2.0).sin() > 0.0);
-                painter.text(pos2(lcd.left() + 46.0, cy), Align2::CENTER_CENTER, secs.to_string(), FontId::monospace(24.0), pal.accent_hover);
-                let title = if left.is_zero() && camera_opening { "Starting camera…" } else { "Recording starts in" };
-                painter.text(pos2(lcd.left() + 70.0, cy - 8.0), Align2::LEFT_CENTER, title, FontId::proportional(12.5), pal.on_glass);
-                painter.text(pos2(lcd.left() + 70.0, cy + 9.0), Align2::LEFT_CENTER, match self.req.mode { Mode::Window => "Selected window", Mode::Area => "Selected area", _ => "Entire display" }, FontId::proportional(11.0), pal.text_dim);
-                let cancel = egui::Rect::from_min_size(pos2(keys_left, cy - 20.0), vec2(keys_w, 40.0));
+                // the seconds left where the stop button will be
+                let n = next(&mut x, stop_w, 10.0);
+                painter.rect_filled(n, CornerRadius::same(2), pal.danger);
+                painter.text(n.center(), Align2::CENTER_CENTER, secs.to_string(), FontId::proportional(15.0), Color32::WHITE);
+                let text = next(&mut x, 170.0, GAP);
+                let title = if left.is_zero() && camera_opening { "Starting camera…" } else { "Recording starts…" };
+                painter.text(pos2(text.left(), cy), Align2::LEFT_CENTER, title, FontId::proportional(13.5), pal.on_glass);
+                let cancel = next(&mut x, 64.0, 0.0);
                 let label = |p: &egui::Painter, r: egui::Rect| {
                     p.text(r.center(), Align2::CENTER_CENTER, "Cancel", FontId::proportional(13.0), pal.on_glass);
                 };
-                if tape_key(ui, cancel, "cancel-countdown", None, label, "Cancel (Esc)").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if hud_button(ui, cancel, "cancel-countdown", label, "Cancel (Esc)").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     return RecordingOutcome::Cancelled(None);
                 }
                 RecordingOutcome::Continue
@@ -385,35 +384,40 @@ impl RecordingScreen {
                 let elapsed = rec.elapsed_ms();
                 let paused = matches!(state, RecorderState::Paused);
 
-                // stop: a red-faced key
-                let mut finish = tape_key(ui, stop_rect, "stop", Some(pal.danger), |p, r| paint_stop_glyph(p, r, Color32::WHITE), "Finish recording").clicked();
+                // stop: red, with a white square
+                let stop = next(&mut x, stop_w, 10.0);
+                let resp = ui.interact(stop, ui.id().with("hud-stop"), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Finish recording (Esc)");
+                painter.rect_filled(stop, CornerRadius::same(2), if resp.is_pointer_button_down_on() { pal.danger.gamma_multiply(0.8) } else if resp.hovered() { pal.danger.gamma_multiply(0.9) } else { pal.danger });
+                painter.rect_filled(egui::Rect::from_center_size(stop.center(), vec2(10.0, 10.0)), CornerRadius::same(1), Color32::WHITE);
+                let mut finish = resp.clicked();
                 let mut restart = false;
 
-                // LCD: REC light · timer · equalizer
-                rec_light(&painter, pos2(lcd.left() + 14.0, cy - 7.0), !paused && (t * 2.0).sin() > -0.3);
-                painter.text(pos2(lcd.left() + 14.0, cy + 9.0), Align2::CENTER_CENTER, if paused { "PAUSE" } else { "REC" }, FontId::monospace(8.5), if paused { pal.text_dim } else { pal.danger });
-                painter.text(pos2(lcd.left() + 34.0, cy), Align2::LEFT_CENTER, crate::editor::fmt_clock_short(elapsed), FontId::monospace(20.0), if paused { pal.text_dim } else { pal.accent_hover });
-                if has_eq {
-                    let eq = egui::Rect::from_min_max(pos2(lcd.right() - 10.0 - EQ_BARS as f32 * 6.0, lcd.top() + 9.0), pos2(lcd.right() - 10.0, lcd.bottom() - 9.0));
-                    paint_equalizer(&painter, eq, &self.levels, if paused { pal.text_faint } else { pal.meter });
+                // time (dim and blinking while paused), then the microphone
+                let time = next(&mut x, time_w, 0.0);
+                let blink_off = paused && (t * 2.0).sin() < 0.0;
+                painter.text(pos2(time.left(), cy), Align2::LEFT_CENTER, crate::editor::fmt_clock_short(elapsed), FontId::monospace(15.0), if blink_off { pal.text_faint } else if paused { pal.text_dim } else { pal.on_glass });
+                if has_mic {
+                    let m = next(&mut x, meter_w, 0.0);
+                    let levels: Vec<f32> = self.levels.iter().copied().collect();
+                    paint_meter(&painter, egui::Rect::from_center_size(m.center(), vec2(14.0, 14.0)), &levels, if paused { pal.text_faint } else { pal.meter });
                 }
+                let divider = next(&mut x, 2.0 * GAP + 1.0, 0.0);
+                painter.vline(divider.center().x, (cy - 10.0)..=(cy + 10.0), Stroke::new(1.0, pal.glass_border));
 
-                // keys: pause · marker · restart · cancel
-                let at = |i: usize| egui::Rect::from_min_size(pos2(keys_left + i as f32 * (key.x + 4.0), cy - 20.0), key);
                 let (icon, tip) = if paused { (crate::widgets::Icon::Play, "Resume") } else { (crate::widgets::Icon::Pause, "Pause") };
-                if tape_key(ui, at(0), "pause", None, |p, r| icon_glyph(p, r, icon, 14.0), tip).clicked() {
+                if hud_button(ui, next(&mut x, BTN, 2.0), "pause", |p, r| icon_glyph(p, r, icon, 14.0), tip).clicked() {
                     let r = if paused { rec.resume() } else { rec.pause() };
                     if let Err(e) = r {
                         self.error = Some(e.to_string());
                     }
                 }
-                if tape_key(ui, at(1), "marker", None, |p, r| icon_glyph(p, r, crate::widgets::Icon::Flag, 14.0), "Add marker (split point)").clicked() {
+                if hud_button(ui, next(&mut x, BTN, 2.0), "marker", |p, r| icon_glyph(p, r, crate::widgets::Icon::Flag, 14.0), "Add a marker (a split point)").clicked() {
                     rec.add_marker();
                 }
-                if tape_key(ui, at(2), "restart", None, |p, r| icon_glyph(p, r, crate::widgets::Icon::Restart, 15.0), "Restart recording").clicked() {
+                if hud_button(ui, next(&mut x, BTN, 2.0), "restart", |p, r| icon_glyph(p, r, crate::widgets::Icon::Restart, 15.0), "Start over").clicked() {
                     restart = true;
                 }
-                if tape_key(ui, at(3), "cancel", None, |p, r| icon_glyph(p, r, crate::widgets::Icon::Close, 13.0), "Cancel recording").clicked() {
+                if hud_button(ui, next(&mut x, BTN, 0.0), "cancel", |p, r| icon_glyph(p, r, crate::widgets::Icon::Trash, 14.0), "Delete this recording").clicked() {
                     if let Phase::Recording(rec) = std::mem::replace(&mut self.phase, Phase::Finishing) {
                         rec.cancel();
                     }
@@ -450,70 +454,54 @@ impl RecordingScreen {
                     }
                 }
                 if let Some(e) = &self.error {
-                    painter.text(pos2(pill.center().x, pill.top() - 16.0), Align2::CENTER_CENTER, e, FontId::proportional(12.0), pal.danger);
+                    painter.text(pos2(bar.center().x, bar.top() - 16.0), Align2::CENTER_CENTER, e, FontId::proportional(12.0), pal.danger);
                 }
                 RecordingOutcome::Continue
             }
             Phase::Finishing => {
-                painter.text(lcd.center(), Align2::CENTER_CENTER, "Finishing…", FontId::proportional(15.0), pal.on_glass);
+                painter.text(bar.center(), Align2::CENTER_CENTER, "Finishing…", FontId::proportional(13.5), pal.on_glass);
                 RecordingOutcome::Continue
             }
         }
     }
 }
 
-/// Bars in the HUD's microphone equalizer.
-const EQ_BARS: usize = 7;
+/// The HUD bar: its height, inner padding, the size of its buttons and the space around the
+/// divider.
+const BAR_H: f32 = 44.0;
+const PAD: f32 = 8.0;
+const BTN: f32 = 28.0;
+const GAP: f32 = 8.0;
+/// Bars in the microphone level next to the time.
+const METER_BARS: usize = 4;
 
-/// The display window: a faint glass tint inside a border.
-fn lcd_window(p: &egui::Painter, r: egui::Rect) {
-    p.rect(r, CornerRadius::same(2), theme::glass_alpha(14), Stroke::new(1.0, theme::p().glass_border), egui::StrokeKind::Inside);
-}
-
-/// The record indicator lamp.
-fn rec_light(p: &egui::Painter, c: egui::Pos2, lit: bool) {
-    let pal = theme::p();
-    if lit {
-        p.circle_filled(c, 7.0, pal.danger.gamma_multiply(0.25));
-        p.circle_filled(c, 4.5, pal.danger);
-    } else {
-        p.circle_filled(c, 4.5, pal.danger.gamma_multiply(0.3));
-    }
-}
-
-/// Level history as bars rising from the bottom of `r` (newest on the right).
-fn paint_equalizer(p: &egui::Painter, r: egui::Rect, levels: &std::collections::VecDeque<f32>, color: Color32) {
-    let bar_w = r.width() / EQ_BARS as f32;
-    for i in 0..EQ_BARS {
-        let l = levels.len().checked_sub(EQ_BARS - i).and_then(|k| levels.get(k)).copied().unwrap_or(0.0);
+/// The last [`METER_BARS`] microphone levels as bars rising from the bottom of `r`.
+fn paint_meter(p: &egui::Painter, r: egui::Rect, levels: &[f32], color: Color32) {
+    let pitch = r.width() / METER_BARS as f32;
+    for i in 0..METER_BARS {
+        let l = levels.len().checked_sub(METER_BARS - i).and_then(|k| levels.get(k)).copied().unwrap_or(0.0);
         let h = (r.height() * l.clamp(0.0, 1.0)).max(2.0);
-        let x = r.left() + i as f32 * bar_w;
-        p.rect_filled(egui::Rect::from_min_max(pos2(x + 1.0, r.bottom() - h), pos2(x + bar_w - 1.0, r.bottom())), CornerRadius::same(1), color);
+        let x = r.left() + i as f32 * pitch;
+        p.rect_filled(egui::Rect::from_min_max(pos2(x + 0.5, r.bottom() - h), pos2(x + pitch - 1.0, r.bottom())), CornerRadius::same(1), color);
     }
-}
-
-fn paint_stop_glyph(p: &egui::Painter, r: egui::Rect, color: Color32) {
-    p.rect_filled(egui::Rect::from_center_size(r.center(), vec2(12.0, 12.0)), CornerRadius::same(2), color);
 }
 
 fn icon_glyph(p: &egui::Painter, r: egui::Rect, icon: crate::widgets::Icon, size: f32) {
     crate::widgets::paint_icon(p, egui::Rect::from_center_size(r.center(), vec2(size, size)), icon, theme::p().on_glass);
 }
 
-/// A flat, bordered tape-recorder key on the glass. `face` fills the key (e.g. red for
-/// stop); `glyph` paints its label. Hover and press deepen the glass tint like the toolbar.
-fn tape_key(ui: &mut Ui, rect: egui::Rect, id: &str, face: Option<Color32>, glyph: impl FnOnce(&egui::Painter, egui::Rect), tooltip: &str) -> egui::Response {
-    let pal = theme::p();
-    let resp = ui.interact(rect, ui.id().with(("tape-key", id)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+/// A borderless button on the glass: hover and press tint it like the toolbar's buttons.
+fn hud_button(ui: &mut Ui, rect: egui::Rect, id: &str, glyph: impl FnOnce(&egui::Painter, egui::Rect), tooltip: &str) -> egui::Response {
+    let resp = ui.interact(rect, ui.id().with(("hud-button", id)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let p = ui.painter();
-    let fill = match face {
-        Some(c) if resp.is_pointer_button_down_on() => c.gamma_multiply(0.8),
-        Some(c) => c,
-        None if resp.is_pointer_button_down_on() => theme::glass_alpha(44),
-        None if resp.hovered() => theme::glass_alpha(28),
-        None => Color32::TRANSPARENT,
+    let fill = if resp.is_pointer_button_down_on() {
+        theme::glass_alpha(44)
+    } else if resp.hovered() {
+        theme::glass_alpha(28)
+    } else {
+        Color32::TRANSPARENT
     };
-    p.rect(rect, CornerRadius::same(2), fill, Stroke::new(1.0, pal.glass_border), egui::StrokeKind::Inside);
+    p.rect_filled(rect, CornerRadius::same(2), fill);
     glyph(p, rect);
     if tooltip.is_empty() { resp } else { resp.on_hover_text(tooltip) }
 }

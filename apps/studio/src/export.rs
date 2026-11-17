@@ -19,7 +19,14 @@ pub const DIALOG_W: f32 = 440.0;
 pub enum Msg {
     Progress(sf_export::Progress),
     Done(Result<PathBuf, String>),
+    /// The title, description and tags written beside the video.
+    Details(sf_engine::details::Details),
 }
+
+/// Part of the progress bar that is the export when it is shared too (the rest is the upload).
+const EXPORT_SHARE: f32 = 0.7;
+/// How long a finished export waits for Claude's details before using the template.
+const DETAILS_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -76,13 +83,18 @@ pub struct ExportDialog {
     /// A share to make (an export with "Make a share link too" finished): the app takes this
     /// and starts the share job.
     pub share_request: Option<crate::share::Source>,
+    /// The export's title, description and tags, for the page behind the link (taken with
+    /// `share_request`).
+    pub share_details: Option<sf_engine::details::Details>,
     /// This project's share job, while one runs: 0..1 and what it is doing (set by the app
     /// every frame).
     pub share_running: Option<(f32, String)>,
     /// Set by Cancel while a share job runs; the app stops the job.
     pub share_cancel: bool,
     /// This project's last share link, or why it failed (set by the app).
-    pub last_link: Option<Result<String, String>>,
+    pub last_link: Option<Result<crate::share::Shared, String>>,
+    /// The last export's title, description and tags (also in `<name>.details.txt`).
+    details: Option<sf_engine::details::Details>,
     /// "Make a share link too": Export uploads what it wrote (Pro; `share::with_export_enabled`).
     share_with_export: bool,
     /// The running or finished export makes a link too: step 2 of the progress dialog.
@@ -99,7 +111,7 @@ pub struct ExportDialog {
 /// that loads the license and talks to the backend.
 impl Default for ExportDialog {
     fn default() -> Self {
-        ExportDialog { open: false, license: sf_license::Status::Invalid("no key".into()), email: String::new(), activation: None, check_in: None, activation_msg: None, code_sent_to: None, code: String::new(), signing_in: false, promo: String::new(), promo_open: false, checkout: None, claim_until: None, next_claim: None, claim: None, free_left: None, free_rx: None, was_open: false, license_seen: 0, free_job: false, format: Format::Mp4, fps: 60.0, height: 1080, quality: QualityPreset::SocialMedia, codec: VideoCodec::H264, audio: true, job: None, progress: None, result: None, started: None, share_request: None, share_running: None, share_cancel: false, last_link: None, share_with_export: false, export_shared: false, project_id: String::new(), qr_open: false }
+        ExportDialog { open: false, license: sf_license::Status::Invalid("no key".into()), email: String::new(), activation: None, check_in: None, activation_msg: None, code_sent_to: None, code: String::new(), signing_in: false, promo: String::new(), promo_open: false, checkout: None, claim_until: None, next_claim: None, claim: None, free_left: None, free_rx: None, was_open: false, license_seen: 0, free_job: false, format: Format::Mp4, fps: 60.0, height: 1080, quality: QualityPreset::SocialMedia, codec: VideoCodec::H264, audio: true, job: None, progress: None, result: None, started: None, share_request: None, share_details: None, share_running: None, share_cancel: false, last_link: None, share_with_export: false, export_shared: false, project_id: String::new(), qr_open: false, details: None }
     }
 }
 
@@ -339,6 +351,7 @@ impl ExportDialog {
             while let Ok(m) = rx.try_recv() {
                 match m {
                     Msg::Progress(p) => self.progress = Some(p),
+                    Msg::Details(d) => self.details = Some(d),
                     Msg::Done(r) => {
                         // a finished free export is counted (kept on disk until online)
                         // the server's answer replaces the count (a cancelled or failed one
@@ -358,6 +371,8 @@ impl ExportDialog {
                             if self.export_shared {
                                 let as_is = self.format == Format::Mp4 && self.codec == VideoCodec::H264;
                                 self.share_request = Some(if as_is { crate::share::Source::File(out.clone()) } else { crate::share::Source::Render(self.share_settings()) });
+                                // written before the video finished (Msg::Details comes first)
+                                self.share_details = self.details.clone();
                                 self.share_running = Some((0.0, "Starting…".into()));
                             }
                         }
@@ -381,7 +396,8 @@ impl ExportDialog {
     }
 
     /// Progress / result shown in the export dialog while `is_busy()`: a preview of the video,
-    /// then the export and (with "Make a share link too") its share link, as two numbered steps.
+    /// one progress bar for the export and (with "Make a share link too") its upload, then the
+    /// file, the links to copy and the video's details.
     /// `preview`: the editor's frame (texture, width / height).
     pub fn compact_ui(&mut self, ui: &mut egui::Ui, preview: Option<(egui::TextureId, f32)>) {
         let pal = theme::p();
@@ -400,19 +416,23 @@ impl ExportDialog {
         }
         let exporting = self.job.is_some();
         let sharing = self.export_shared;
+        let uploading = sharing && !exporting && self.share_running.is_some();
         let title = if exporting {
-            "Exporting…"
-        } else if sharing && self.share_running.is_some() {
-            "Making the share link…"
+            if sharing { "Exporting and sharing…" } else { "Exporting…" }
+        } else if uploading {
+            "Uploading…"
+        } else if sharing && matches!(self.last_link, Some(Ok(_))) {
+            "Exported and shared"
         } else {
             "Export complete"
         };
         ui.label(RichText::new(title).size(15.0).strong().color(pal.text));
         ui.add_space(8.0);
         if let Some((tex, aspect)) = preview {
-            // what is being exported, as wide as the box (at most 220 px tall)
+            // what is being exported, as wide as the box (at most 220 px tall, less once done
+            // to leave room for the links)
             let w = ui.available_width();
-            let h = (w / aspect.max(0.1)).min(220.0);
+            let h = (w / aspect.max(0.1)).min(if exporting || uploading { 220.0 } else { 150.0 });
             let size = egui::vec2(h * aspect, h).min(egui::vec2(w, h));
             ui.vertical_centered(|ui| {
                 ui.add(egui::Image::new((tex, size)).corner_radius(4));
@@ -420,73 +440,124 @@ impl ExportDialog {
             ui.add_space(12.0);
         }
 
-        // 1. the video file
-        let p = self.progress;
-        let frac = p.map(|p| p.frame as f32 / p.total_frames.max(1) as f32).unwrap_or(0.0);
-        step_header(ui, 1, "Video", if exporting { StepState::Active } else { StepState::Done }, exporting.then(|| format!("{:.0}%", frac * 100.0)));
-        step_body(ui, |ui| {
-            if exporting {
-                progress_bar(ui, frac);
-                ui.add_space(2.0);
-                match (p, self.started) {
-                    (Some(_), Some(t)) if frac > 0.02 => {
-                        let el = t.elapsed().as_secs_f64();
-                        widgets::hint(ui, &format!("About {:.0}s left", el / frac as f64 - el));
-                    }
-                    _ => widgets::hint(ui, "Preparing…"),
-                }
-            } else if let Some(Ok(out)) = self.result.clone() {
-                ui.horizontal(|ui| {
+        if exporting || uploading {
+            self.progress_ui(ui, exporting, sharing);
+            return;
+        }
+
+        // the file
+        if let Some(Ok(out)) = self.result.clone() {
+            widgets::labeled_row(ui, "File", |ui| {
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                     ui.label(RichText::new(name).size(13.0).color(pal.text)).on_hover_text(out.display().to_string());
                     if widgets::icon_button(ui, widgets::Icon::Folder, 13.0, &format!("Show in {}", crate::os::FILE_MANAGER)).clicked() {
                         crate::os::reveal(&out);
                     }
                 });
-                // written after the video by this export (an older list of a project that
-                // has no chapters now is not mentioned)
-                let txt = sf_export::chapters_txt_path(&out);
-                let modified = |f: &std::path::Path| std::fs::metadata(f).and_then(|m| m.modified()).ok();
-                if modified(&txt).zip(modified(&out)).is_some_and(|(t, v)| t >= v) {
-                    let txt_name = txt.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    widgets::hint(ui, &format!("Chapters are in the video, and listed for a YouTube description in {txt_name}."));
+            });
+        }
+
+        // the links: everything this export was shared as, or the project's page
+        if sharing || crate::share::allowed() {
+            ui.add_space(6.0);
+            section_label(ui, "Links");
+            let shared = match &self.last_link {
+                Some(Ok(s)) if sharing => Some(s.clone()),
+                _ => self.shown_link().map(crate::share::Shared::page),
+            };
+            if let Some(Err(e)) = self.last_link.clone().filter(|_| sharing) {
+                ui.add(egui::Label::new(RichText::new(format!("The upload failed: {e}")).size(13.0).color(pal.danger)).wrap());
+                ui.add_space(4.0);
+            }
+            if let Some(shared) = shared {
+                let rows = if sharing && matches!(self.last_link, Some(Ok(_))) { crate::share::link_rows(&shared, &self.title_for_links()) } else { crate::share::link_rows(&shared, "").into_iter().take(1).collect() };
+                for row in rows {
+                    if row.label == "Page" {
+                        widgets::labeled_row(ui, row.label, |ui| widgets::link_field_qr(ui, &row.text, &mut self.qr_open));
+                    } else {
+                        widgets::labeled_row(ui, row.label, |ui| widgets::copy_field(ui, &row.text, row.tip));
+                    }
                 }
             }
-        });
-
-        // 2. the project's share link, always at hand (with its QR code); this export puts its
-        // video behind it with "Make a share link too"
-        if sharing || crate::share::allowed() {
-            ui.add_space(10.0);
-            let state = match (&self.share_running, &self.last_link) {
-                _ if !sharing => StepState::Done,
-                _ if exporting => StepState::Waiting,
-                (Some(_), _) => StepState::Active,
-                (None, Some(Err(_))) => StepState::Failed,
-                _ => StepState::Done,
-            };
-            let pct = self.share_running.as_ref().map(|(f, _)| format!("{:.0}%", f * 100.0));
-            step_header(ui, 2, "Share link", state, pct);
-            step_body(ui, |ui| {
-                self.link_status_ui(ui);
+            if !sharing {
                 widgets::hint(ui, LINK_HINT);
-            });
+            }
+        }
+
+        // the title, description and tags
+        if let Some(d) = self.details.clone() {
+            ui.add_space(6.0);
+            section_label(ui, if d.by_ai { "Details · written by AI" } else { "Details" });
+            widgets::labeled_row(ui, "Title", |ui| widgets::copy_field(ui, &d.title, "Copy the title"));
+            if !d.description.is_empty() {
+                widgets::labeled_row(ui, "Description", |ui| widgets::copy_field(ui, &d.description, "Copy the description (with the chapters)"));
+            }
+            if !d.tags.is_empty() {
+                widgets::labeled_row(ui, "Tags", |ui| widgets::copy_field(ui, &d.tags_line(), "Copy the tags"));
+            }
+            if let Some(Ok(out)) = &self.result {
+                let txt = sf_export::details_txt_path(out);
+                let name = txt.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                widgets::hint(ui, &format!("Also saved beside the video in {name}."));
+            }
         }
 
         ui.add_space(10.0);
         buttons_row(ui, |ui| {
-            if exporting {
-                if widgets::secondary_button(ui, "Cancel").on_hover_text("Esc").clicked() {
-                    if let Some((_, _, cancel)) = &self.job {
-                        cancel.store(true, Ordering::Relaxed);
-                    }
-                }
-            } else if widgets::accent_button(ui, "Done").clicked() {
-                // a link still uploading carries on; a notification says when it is ready
+            if widgets::accent_button(ui, "Done").clicked() {
                 self.result = None;
                 self.export_shared = false;
             }
         });
+    }
+
+    /// One bar for the whole job: the export, then (when shared) the upload.
+    fn progress_ui(&mut self, ui: &mut egui::Ui, exporting: bool, sharing: bool) {
+        let pal = theme::p();
+        let p = self.progress;
+        let export_frac = if exporting { p.map(|p| p.frame as f32 / p.total_frames.max(1) as f32).unwrap_or(0.0) } else { 1.0 };
+        let share_frac = self.share_running.as_ref().map_or(0.0, |(f, _)| *f);
+        let overall = if !sharing { export_frac } else if exporting { EXPORT_SHARE * export_frac } else { EXPORT_SHARE + (1.0 - EXPORT_SHARE) * share_frac };
+        let label = if exporting {
+            match (p, self.started) {
+                (Some(_), Some(t)) if export_frac > 0.02 => {
+                    let el = t.elapsed().as_secs_f64();
+                    format!("Rendering the video · about {:.0}s left", el / export_frac as f64 - el)
+                }
+                _ => "Preparing…".to_string(),
+            }
+        } else {
+            self.share_running.as_ref().map(|(_, l)| l.clone()).unwrap_or_else(|| "Uploading…".into())
+        };
+        progress_bar(ui, overall);
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            widgets::hint(ui, &label);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(format!("{:.0}%", overall * 100.0)).size(13.0).color(pal.text_dim));
+            });
+        });
+        if sharing {
+            widgets::hint(ui, "The links to copy show here once it is uploaded.");
+        }
+        ui.add_space(10.0);
+        buttons_row(ui, |ui| {
+            if widgets::secondary_button(ui, "Cancel").on_hover_text("Esc").clicked() {
+                if let Some((_, _, cancel)) = &self.job {
+                    cancel.store(true, Ordering::Relaxed);
+                } else {
+                    // stop uploading; the link keeps what it had
+                    self.share_cancel = true;
+                }
+            }
+        });
+    }
+
+    /// The title the Markdown and embed links carry: the video's details, else nothing (the
+    /// links then say "Watch the video").
+    fn title_for_links(&self) -> String {
+        self.details.as_ref().map(|d| d.title.clone()).unwrap_or_default()
     }
 
     /// Export settings, drawn in the export dialog over the editor. Escape, Cancel or a click
@@ -575,7 +646,7 @@ impl ExportDialog {
         if !self.project_id.is_empty() {
             return Some(crate::share::link_url(&self.project_id));
         }
-        self.last_link.clone().and_then(Result::ok)
+        self.last_link.clone().and_then(Result::ok).map(|s| s.url)
     }
 
     /// Cloud share links (Pro): made by Export with "Make a share link too"; others see what
@@ -787,6 +858,19 @@ impl ExportDialog {
             QualityPreset::WebLow => 0.2,
         };
         let opts = sf_export::ExportOptions { output: out, fps: self.fps, max_height: self.height, codec, quality, include_audio: self.audio, range_ms: None };
+        // the title, description and tags are written while the video renders: by Claude when
+        // the agent (AI) is on for this computer, else from the template
+        let input = sf_export::details_input(&ed.session, None);
+        let fallback = input.clone();
+        let ai = ed.agent.ai_allowed() != Some(false);
+        let (details_tx, details_rx) = channel();
+        std::thread::Builder::new()
+            .name("export-details".into())
+            .spawn(move || {
+                let drafted = if ai { crate::agent_panel::details_route().and_then(|(route, model)| sf_agent::details::draft(&route, model, &input).ok()) } else { None };
+                let _ = details_tx.send(drafted.unwrap_or_else(|| sf_engine::details::template(&input)));
+            })
+            .expect("spawn export details");
         let (tx, rx) = channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel2 = cancel.clone();
@@ -800,7 +884,13 @@ impl ExportDialog {
                     let _ = tx2.send(Msg::Progress(p));
                 })
             };
-            let _ = tx.send(Msg::Done(run().map_err(|e| format!("{e:#}"))));
+            let done = run();
+            if let Ok(video) = &done {
+                let details = details_rx.recv_timeout(DETAILS_WAIT).unwrap_or_else(|_| sf_engine::details::template(&fallback));
+                let _ = std::fs::write(sf_export::details_txt_path(video), details.to_text());
+                let _ = tx.send(Msg::Details(details));
+            }
+            let _ = tx.send(Msg::Done(done.map_err(|e| format!("{e:#}"))));
         });
         self.free_job = !self.license.is_valid();
         if self.free_job {
@@ -812,6 +902,7 @@ impl ExportDialog {
         self.started = Some(std::time::Instant::now());
         self.progress = None;
         self.result = None;
+        self.details = None;
         // step 2 of the progress dialog: the link, once the file is written
         self.export_shared = self.share_with_export && crate::share::allowed();
         if self.export_shared {
@@ -822,59 +913,13 @@ impl ExportDialog {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum StepState {
-    Waiting,
-    Active,
-    Done,
-    Failed,
-}
-
 /// The one note under a project's share link, the same whatever is uploaded.
 const LINK_HINT: &str = "This project's link. Export with \u{201c}Make a share link too\u{201d} to put the latest video behind it.";
 
-/// A numbered step of the export dialog: its marker (number, or a check once done), its name,
-/// and on the right its percentage while it runs.
-fn step_header(ui: &mut egui::Ui, n: u32, name: &str, state: StepState, right: Option<String>) {
-    let pal = theme::p();
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
-        let c = rect.center();
-        let painter = ui.painter();
-        match state {
-            StepState::Done => {
-                painter.circle_filled(c, 9.0, pal.accent);
-                widgets::paint_icon(painter, rect.shrink(4.5), widgets::Icon::Check, pal.bg);
-            }
-            StepState::Failed => {
-                painter.circle_filled(c, 9.0, pal.danger);
-                widgets::paint_icon(painter, rect.shrink(5.0), widgets::Icon::Close, pal.bg);
-            }
-            StepState::Active | StepState::Waiting => {
-                let color = if state == StepState::Active { pal.accent } else { pal.text_faint };
-                painter.circle_stroke(c, 8.25, egui::Stroke::new(1.5, color));
-                painter.text(c, egui::Align2::CENTER_CENTER, n.to_string(), egui::FontId::proportional(11.0), color);
-            }
-        }
-        let text = if state == StepState::Waiting { pal.text_dim } else { pal.text };
-        ui.label(RichText::new(name).size(14.0).color(text));
-        if let Some(r) = right {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(RichText::new(r).size(13.0).color(pal.text_dim));
-            });
-        }
-    });
+/// A small heading over a list of copy rows ("Links", "Details").
+fn section_label(ui: &mut egui::Ui, text: &str) {
+    ui.label(RichText::new(text).size(13.0).strong().color(theme::p().text));
     ui.add_space(4.0);
-}
-
-/// What a step shows under its header, lined up with the step's name (past the 18 px marker)
-/// and as wide as the box from there.
-fn step_body(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
-    let left = 18.0 + ui.spacing().item_spacing.x;
-    egui::Frame::NONE.inner_margin(egui::Margin { left: left as i8, right: 0, top: 0, bottom: 0 }).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        add(ui);
-    });
 }
 
 /// A full-width bar painted by hand (egui's ProgressBar shrinks to its label in these dialogs).

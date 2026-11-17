@@ -385,6 +385,47 @@ pub fn link_field_qr(ui: &mut Ui, url: &str, qr: &mut bool) {
     }
 }
 
+/// A read-only, one-row box with `text` (its first line, when it has several; all of it on hover)
+/// and a copy button that copies all of it.
+pub fn copy_field(ui: &mut Ui, text: &str, tooltip: &str) {
+    let pal = theme::p();
+    let first = text.lines().next().unwrap_or("");
+    let shown = if text.lines().nth(1).is_some() { format!("{first} …") } else { first.to_string() };
+    egui::Frame::NONE
+        .fill(pal.bg)
+        .stroke(Stroke::new(1.0, pal.border))
+        .corner_radius(CornerRadius::same(BUTTON_RADIUS))
+        .inner_margin(egui::Margin { left: 10, right: 6, top: 0, bottom: 0 })
+        .show(ui, |ui| {
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let mut view = shown.as_str();
+                ui.add_sized(
+                    vec2((ui.available_width() - 27.0).max(40.0), 30.0),
+                    egui::TextEdit::singleline(&mut view).font(egui::FontId::proportional(13.0)).text_color(pal.text).frame(egui::Frame::NONE).vertical_align(egui::Align::Center).margin(egui::Margin::ZERO).min_size(vec2(0.0, 30.0)),
+                )
+                .on_hover_text(text);
+                copy_button(ui, text, tooltip);
+            });
+        });
+}
+
+/// A copy row of a list: `label` in a fixed column on the left, then the box. `add` draws the
+/// box (a [`copy_field`] or a [`link_field_qr`]).
+pub fn labeled_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
+    ui.horizontal_top(|ui| {
+        ui.allocate_ui_with_layout(vec2(78.0, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_width(78.0);
+            ui.label(RichText::new(label).size(13.0).color(theme::p().text_dim));
+        });
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            add(ui);
+        });
+    });
+    ui.add_space(4.0);
+}
+
 /// `text` as a QR code, `side` points square with its quiet zone, centred in the row: dark
 /// modules on white whatever the theme, so phone cameras read it.
 pub fn qr_code(ui: &mut Ui, text: &str, side: f32) {

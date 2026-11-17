@@ -17,6 +17,7 @@ pub mod camera;
 pub mod chapters;
 pub mod captions;
 pub mod cursor;
+pub mod details;
 pub mod device;
 pub mod lanes;
 pub mod spring;

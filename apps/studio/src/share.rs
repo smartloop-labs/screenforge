@@ -35,9 +35,65 @@ pub enum Stage {
     Uploading(f32),
 }
 
+/// A finished share: the page anyone can watch, and (when the server says) the video file and
+/// poster behind it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shared {
+    pub url: String,
+    pub video: Option<String>,
+    pub poster: Option<String>,
+}
+
+impl Shared {
+    /// Just the page (its id is known before anything is uploaded; `link_url`).
+    pub fn page(url: String) -> Shared {
+        Shared { url, ..Default::default() }
+    }
+}
+
+/// One link to copy from the export dialog: what it is, and the text that goes on the clipboard.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinkRow {
+    pub label: &'static str,
+    pub text: String,
+    pub tip: &'static str,
+}
+
+/// Everything a share can be pasted as: the page, the video file, Markdown with the poster
+/// (GitHub, Notion, docs) and HTML to embed the player.
+pub fn link_rows(s: &Shared, title: &str) -> Vec<LinkRow> {
+    let title = title.trim();
+    let alt = if title.is_empty() { "Watch the video" } else { title };
+    let alt_md = alt.replace(['[', ']'], "");
+    let esc = |t: &str| t.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+    let mut rows = vec![LinkRow { label: "Page", text: s.url.clone(), tip: "The page anyone can watch: paste it in a message, email or ticket" }];
+    if let Some(v) = &s.video {
+        rows.push(LinkRow { label: "Video file", text: v.clone(), tip: "The MP4 itself, for players and tools that take a video address" });
+    }
+    let md = match &s.poster {
+        Some(p) => format!("[![{alt_md}]({p})]({})", s.url),
+        None => format!("[{alt_md}]({})", s.url),
+    };
+    rows.push(LinkRow { label: "Markdown", text: md, tip: "For GitHub, Notion and docs: the poster image, linked to the page" });
+    if let Some(v) = &s.video {
+        let poster = s.poster.as_ref().map(|p| format!(" poster=\"{}\"", esc(p))).unwrap_or_default();
+        rows.push(LinkRow { label: "Embed", text: format!("<video src=\"{}\"{poster} controls playsinline width=\"640\" title=\"{}\"></video>", esc(v), esc(alt)), tip: "HTML for a web page: the video plays right there" });
+    }
+    rows
+}
+
+/// What the page behind a link says about the video: its title, a description (which may end
+/// with the chapter list) and tags.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Meta {
+    pub title: String,
+    pub description: String,
+    pub tags: Vec<String>,
+}
+
 enum Msg {
     Stage(Stage),
-    Done(Result<String, String>),
+    Done(Result<Shared, String>),
 }
 
 /// A share in progress (or just finished) for one project.
@@ -45,8 +101,8 @@ pub struct ShareJob {
     pub project: PathBuf,
     pub title: String,
     pub stage: Stage,
-    /// The link, or why there is none. Set once the job is over.
-    pub result: Option<Result<String, String>>,
+    /// The links, or why there are none. Set once the job is over.
+    pub result: Option<Result<Shared, String>>,
     rx: Receiver<Msg>,
     cancel: Arc<AtomicBool>,
 }
@@ -54,10 +110,11 @@ pub struct ShareJob {
 impl ShareJob {
     /// Render `project` (or take the exported file) and upload it on a background thread.
     /// `repaint` wakes the UI as the job moves on.
-    pub fn start(project: PathBuf, title: String, source: Source, repaint: egui::Context) -> ShareJob {
+    pub fn start(project: PathBuf, meta: Meta, source: Source, repaint: egui::Context) -> ShareJob {
         let (tx, rx) = channel();
         let cancel = Arc::new(AtomicBool::new(false));
-        let (path, name, stop) = (project.clone(), title.clone(), cancel.clone());
+        let title = meta.title.clone();
+        let (path, name, stop) = (project.clone(), meta, cancel.clone());
         let first = if matches!(source, Source::File(_)) { Stage::Uploading(0.0) } else { Stage::Rendering(0.0) };
         std::thread::Builder::new()
             .name("share-link".into())
@@ -181,7 +238,7 @@ fn ask_allowed(generation: u64) {
     });
 }
 
-fn run(project: &Path, title: &str, source: Source, cancel: &AtomicBool, stage: &dyn Fn(Stage)) -> Result<String, String> {
+fn run(project: &Path, meta: &Meta, source: Source, cancel: &AtomicBool, stage: &dyn Fn(Stage)) -> Result<Shared, String> {
     let auth = sf_license::owner_auth().ok_or("Sign in to ScreenForge Pro on this computer to share links (Export → Sign in).")?;
     let s = match source {
         Source::File(video) => {
@@ -189,7 +246,7 @@ fn run(project: &Path, title: &str, source: Source, cancel: &AtomicBool, stage: 
             let info = sf_media::probe::probe(&video).map_err(|e| format!("Could not read the exported video: {e:#}"))?;
             let v = info.video();
             let dims = (v.and_then(|v| v.width).unwrap_or(0), v.and_then(|v| v.height).unwrap_or(0), info.duration_ms().unwrap_or(0.0).max(0.0) as u64);
-            return upload(project, &video, title, dims, auth, cancel, &|f| stage(Stage::Uploading(f)));
+            return upload(project, &video, meta, dims, auth, cancel, &|f| stage(Stage::Uploading(f)));
         }
         Source::Render(s) => s,
     };
@@ -203,7 +260,7 @@ fn run(project: &Path, title: &str, source: Source, cancel: &AtomicBool, stage: 
             return Err(CANCELLED.to_string());
         }
         stage(Stage::Uploading(0.0));
-        upload(project, &video, title, (width, height, duration_ms), auth, cancel, &|f| stage(Stage::Uploading(f)))
+        upload(project, &video, meta, (width, height, duration_ms), auth, cancel, &|f| stage(Stage::Uploading(f)))
     })();
     let _ = std::fs::remove_file(&video);
     result
@@ -244,7 +301,7 @@ fn poster_jpeg(project: &Path) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn upload(project: &Path, video: &Path, title: &str, (width, height, duration_ms): (u32, u32, u64), auth: serde_json::Value, cancel: &AtomicBool, progress: &dyn Fn(f32)) -> Result<String, String> {
+fn upload(project: &Path, video: &Path, meta: &Meta, (width, height, duration_ms): (u32, u32, u64), auth: serde_json::Value, cancel: &AtomicBool, progress: &dyn Fn(f32)) -> Result<Shared, String> {
     let bytes = std::fs::metadata(video).map_err(|e| format!("The rendered video is missing: {e}"))?.len();
     let poster = poster_jpeg(project);
     let mut req = auth.clone();
@@ -254,7 +311,14 @@ fn upload(project: &Path, video: &Path, title: &str, (width, height, duration_ms
     if let Some(id) = &project_id {
         req["project"] = id.clone().into();
     }
-    req["title"] = title.into();
+    req["title"] = meta.title.as_str().into();
+    // older share servers ignore these
+    if !meta.description.trim().is_empty() {
+        req["description"] = meta.description.trim().into();
+    }
+    if !meta.tags.is_empty() {
+        req["tags"] = meta.tags.clone().into();
+    }
     req["bytes"] = bytes.into();
     req["width"] = width.into();
     req["height"] = height.into();
@@ -280,10 +344,14 @@ fn upload(project: &Path, video: &Path, title: &str, (width, height, duration_ms
     }
     let mut req = auth;
     req["action"] = "complete".into();
-    req["id"] = id.into();
+    req["id"] = id.clone().into();
     let done = call(req)?;
     let url = done["url"].as_str().map(String::from).ok_or("The share server sent no link.")?;
-    Ok(url)
+    // the file and poster addresses (with the version that gets past the CDN's cached copy)
+    // come from the public `get`; without them the dialog lists the page alone
+    let media = call(serde_json::json!({ "action": "get", "id": id })).ok();
+    let field = |k: &str| media.as_ref().and_then(|m| m[k].as_str()).filter(|s| s.starts_with("https://")).map(String::from);
+    Ok(Shared { url, video: field("video"), poster: field("poster") })
 }
 
 /// The video file as the upload body, reporting progress and stopping when cancelled.
@@ -396,6 +464,20 @@ mod tests {
         assert!((job.fraction() - 0.3).abs() < 1e-6);
         job.stage = Stage::Uploading(1.0);
         assert!((job.fraction() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn link_rows_cover_page_file_markdown_and_embed() {
+        let s = Shared { url: "https://screenforge.studio/s/abc".into(), video: Some("https://media.screenforge.studio/v/abc/video.mp4?v=2".into()), poster: Some("https://media.screenforge.studio/v/abc/poster.jpg?v=2".into()) };
+        let rows = link_rows(&s, "My [demo] & more");
+        let labels: Vec<_> = rows.iter().map(|r| r.label).collect();
+        assert_eq!(labels, vec!["Page", "Video file", "Markdown", "Embed"]);
+        assert_eq!(rows[2].text, "[![My demo & more](https://media.screenforge.studio/v/abc/poster.jpg?v=2)](https://screenforge.studio/s/abc)");
+        assert!(rows[3].text.starts_with("<video src=\"https://media.screenforge.studio/v/abc/video.mp4?v=2\" poster="));
+        assert!(rows[3].text.contains("title=\"My [demo] &amp; more\""));
+        // only the page known: the page and a plain Markdown link
+        let rows = link_rows(&Shared::page("https://screenforge.studio/s/abc".into()), "");
+        assert_eq!(rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(), vec!["https://screenforge.studio/s/abc", "[Watch the video](https://screenforge.studio/s/abc)"]);
     }
 
     #[test]
