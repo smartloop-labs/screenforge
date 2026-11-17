@@ -17,6 +17,31 @@ function duration(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// A chapter line of a description: `00:00 Intro`, `1:02:03 Wrap-up`.
+const CHAPTER = /^((?:\d{1,2}:)?\d{1,2}:\d{2})\s+(.+)$/;
+const seconds = (t) => t.split(":").reduce((n, p) => n * 60 + Number(p), 0);
+
+// The description as HTML: paragraphs, and chapter lines as times that jump the player there.
+function describe(text) {
+  const blocks = String(text ?? "").trim().split(/\n\s*\n/).filter((b) => b.trim());
+  return blocks.map((block) => {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    const chapters = lines.filter((l) => CHAPTER.test(l));
+    if (chapters.length >= 2 && chapters.length >= lines.length - 1) {
+      const head = lines.length > chapters.length ? `<h2>${esc(lines.find((l) => !CHAPTER.test(l)))}</h2>` : "";
+      const items = chapters.map((l) => { const [, t, name] = l.match(CHAPTER); return `<li><a href="#t=${seconds(t)}" data-t="${seconds(t)}">${esc(t)}</a><span>${esc(name)}</span></li>`; }).join("");
+      return `${head}<ol class="chapters">${items}</ol>`;
+    }
+    return `<p>${lines.map(esc).join("<br>")}</p>`;
+  }).join("");
+}
+
+// The description's opening, for link previews (no chapter list).
+function summary(text) {
+  const prose = String(text ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !CHAPTER.test(l) && l !== "Chapters").join(" ");
+  return prose.length > 200 ? prose.slice(0, 197).replace(/\s+\S*$/, "") + "…" : prose;
+}
+
 const STYLE = `
 :root{--ground:#15161e;--ink:#1e1f29;--line:rgba(248,248,242,.10);--fg:#c9cbdc;--white:#f8f8f2;--dim:#8e90a6;--accent:#ff8a5c;--on-accent:#1e1f29;color-scheme:dark}
 @media (prefers-color-scheme:light){:root{--ground:#ececf1;--ink:#f6f6fa;--line:rgba(30,31,41,.12);--fg:#2e2f3b;--white:#1a1b24;--dim:#5f6175;--accent:#d4442a;--on-accent:#fff;color-scheme:light}}
@@ -34,6 +59,15 @@ h1{color:var(--white);font-size:22px;font-weight:600;letter-spacing:-.01em;margi
 .meta{color:var(--dim);font-size:13.5px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 .row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
 .actions{display:flex;gap:8px;margin-top:18px}
+.about{max-width:760px;margin-top:18px;color:var(--fg);font-size:15px}
+.about p{margin-bottom:12px;overflow-wrap:anywhere}
+.about h2{color:var(--white);font-size:14px;font-weight:600;margin:6px 0 6px}
+.chapters{list-style:none;margin-bottom:12px}
+.chapters li{display:flex;gap:12px;padding:3px 0}
+.chapters a{color:var(--accent);text-decoration:none;font-variant-numeric:tabular-nums;min-width:52px}
+.chapters a:hover{text-decoration:underline}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tags span{color:var(--dim);font-size:12.5px;border:1px solid var(--line);border-radius:2px;padding:2px 8px}
 footer{margin-top:auto;padding-top:40px;padding-bottom:28px;color:var(--dim);font-size:13px;text-align:center}
 footer a{color:var(--fg)}
 .gone{text-align:center;padding:18vh 0}
@@ -94,12 +128,16 @@ async function render(id) {
     return new Response("This video could not be loaded. Try again in a moment.", { status: 502 });
   }
   const title = s.title || "Screen recording";
+  const about = summary(s.description);
+  const tags = Array.isArray(s.tags) ? s.tags.filter((t) => typeof t === "string" && t) : [];
   const date = s.created_at ? new Date(s.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
   const og = [
     `<meta name="robots" content="noindex">`,
     `<meta property="og:type" content="video.other">`,
     `<meta property="og:site_name" content="ScreenForge">`,
     `<meta property="og:title" content="${esc(title)}">`,
+    about ? `<meta name="description" content="${esc(about)}"><meta property="og:description" content="${esc(about)}"><meta name="twitter:description" content="${esc(about)}">` : "",
+    tags.length ? `<meta name="keywords" content="${esc(tags.join(", "))}">` : "",
     `<meta property="og:url" content="${esc(s.url)}">`,
     `<meta property="og:video" content="${esc(s.video)}">`,
     `<meta property="og:video:secure_url" content="${esc(s.video)}">`,
@@ -115,6 +153,7 @@ async function render(id) {
 <div class="player"><video controls playsinline preload="metadata"${aspect}${s.poster ? ` poster="${esc(s.poster)}"` : ""} src="${esc(s.video)}"></video></div>
 <div class="row"><div><h1>${esc(title)}</h1><p class="meta">${[date, duration(s.duration_ms), views].filter(Boolean).map(esc).join("<span>·</span>")}</p></div>
 <div class="actions"><button class="btn" id="copy" type="button">Copy link</button><button class="btn" id="qr" type="button" title="Show a QR code to scan"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="1.5" width="5" height="5"/><rect x="9.5" y="1.5" width="5" height="5"/><rect x="1.5" y="9.5" width="5" height="5"/><path d="M9.5 9.5h2.5v2.5h-2.5zM12.5 12.5h2v2h-2z" fill="currentColor" stroke="none"/></svg>QR code</button><a class="btn" href="${esc(s.video)}" download>Download</a></div></div>
+${s.description || tags.length ? `<section class="about">${describe(s.description)}${tags.length ? `<div class="tags">${tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}</section>` : ""}
 </main>
 <div id="qr-view" role="dialog" aria-modal="true" aria-label="QR code for this video"><span class="qr" id="qr-big"></span><p>${esc(String(s.url).replace(/^https?:\/\//, ""))}</p><button class="btn" id="qr-close" type="button">Close</button></div>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" integrity="sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz" crossorigin="anonymous"></script>
@@ -133,6 +172,10 @@ async function render(id) {
   document.getElementById("qr").onclick=open;
   view.onclick=close;document.addEventListener("keydown",function(e){if(e.key==="Escape")close()});
 })();
+// chapter times jump the player (and #t=… in the address starts there)
+(function(){var v=document.querySelector("video");if(!v)return;function go(t){v.currentTime=t;v.play().catch(function(){});v.scrollIntoView({behavior:"smooth",block:"center"})}
+document.querySelectorAll(".chapters a").forEach(function(a){a.onclick=function(e){e.preventDefault();go(Number(a.dataset.t));history.replaceState(null,"","#t="+a.dataset.t)}});
+var m=location.hash.match(/^#t=(\d+)$/);if(m)v.addEventListener("loadedmetadata",function(){v.currentTime=Number(m[1])},{once:true})})();
 document.getElementById("copy").onclick=function(){var b=this;navigator.clipboard.writeText(${JSON.stringify(s.url)}).then(function(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy link"},1500)})};
 try{fetch(${JSON.stringify(`${SUPABASE_URL}/functions/v1/share`)},{method:"POST",keepalive:true,headers:{apikey:${JSON.stringify(SUPABASE_ANON_KEY)},Authorization:"Bearer "+${JSON.stringify(SUPABASE_ANON_KEY)},"Content-Type":"application/json"},body:JSON.stringify({action:"view",id:${JSON.stringify(id)}})})}catch(e){}
 </script>`;
