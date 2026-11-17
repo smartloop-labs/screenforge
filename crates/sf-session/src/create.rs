@@ -113,6 +113,12 @@ pub fn create_project_from_recording(recording_dir: &Path, opts: CreateOptions) 
             }
         }
     }
+    // markers set while recording start chapters (the agent or the Chapters page names them)
+    let chapters = chapters_from_markers(&opts.markers_ms, duration);
+    if !chapters.is_empty() {
+        use sf_project::SceneChaptersExt;
+        scene.set_chapters(chapters);
+    }
     let markers: Vec<serde_json::Value> = opts
         .markers_ms
         .iter()
@@ -124,6 +130,19 @@ pub fn create_project_from_recording(recording_dir: &Path, opts: CreateOptions) 
     let pkg = ProjectPackage { path: pkg_path, meta: package::PackageMeta::new_now(), project, markers, recording: Some(meta), migrated: false };
     pkg.save()?;
     Ok(pkg)
+}
+
+/// Chapters from markers set while recording (ms of the recording): one at the start, then one
+/// at each marker. Markers in the first or last second, or within a second of the one before,
+/// add nothing. No markers, no chapters.
+pub fn chapters_from_markers(markers_ms: &[f64], duration_ms: f64) -> Vec<sf_project::Chapter> {
+    let mut at: Vec<f64> = markers_ms.iter().copied().filter(|m| m.is_finite() && *m >= 1000.0 && *m <= duration_ms - 1000.0).collect();
+    at.sort_by(f64::total_cmp);
+    at.dedup_by(|b, a| *b - *a < 1000.0);
+    if at.is_empty() {
+        return vec![];
+    }
+    std::iter::once(0.0).chain(at).enumerate().map(|(i, ms)| sf_project::Chapter::new(format!("Chapter {}", i + 1), ms, None)).collect()
 }
 
 fn chrono_iso(unix_ms: f64) -> String {
@@ -191,5 +210,15 @@ mod tests {
         let cfg = create(false);
         assert_eq!(cfg.output.padding_ratio01, 0.1);
         assert_eq!(cfg.styles.screen_border_radius, 16.0);
+    }
+
+    #[test]
+    fn markers_start_chapters() {
+        let ch = chapters_from_markers(&[30_000.0, 500.0, 30_400.0, 90_000.0, 119_600.0], 120_000.0);
+        let at: Vec<(String, f64)> = ch.iter().map(|c| (c.title.clone(), c.source_ms)).collect();
+        // the start, then 30 s and 90 s: too early, too close and too late markers add nothing
+        assert_eq!(at, vec![("Chapter 1".to_string(), 0.0), ("Chapter 2".into(), 30_000.0), ("Chapter 3".into(), 90_000.0)]);
+        assert!(chapters_from_markers(&[], 120_000.0).is_empty());
+        assert!(chapters_from_markers(&[200.0], 120_000.0).is_empty());
     }
 }

@@ -411,8 +411,17 @@ impl RecordingScreen {
                         self.error = Some(e.to_string());
                     }
                 }
-                if hud_button(ui, next(&mut x, BTN, 2.0), "marker", |p, r| icon_glyph(p, r, crate::widgets::Icon::Flag, 14.0), "Add a marker (a split point)").clicked() {
+                // a marker starts a chapter in the project; the count shows each press landed
+                let marked = rec.markers().len();
+                let flag = next(&mut x, BTN, 2.0);
+                let tip = if marked == 0 { "Start a chapter here".to_string() } else { format!("Start a chapter here ({} marked)", marked) };
+                if hud_button(ui, flag, "marker", |p, r| icon_glyph(p, r, crate::widgets::Icon::Flag, 14.0), &tip).clicked() {
                     rec.add_marker();
+                }
+                if marked > 0 {
+                    let c = pos2(flag.right() - 5.0, flag.top() + 5.0);
+                    painter.circle_filled(c, 6.5, pal.accent);
+                    painter.text(c, Align2::CENTER_CENTER, marked.min(99).to_string(), FontId::proportional(9.5), Color32::WHITE);
                 }
                 if hud_button(ui, next(&mut x, BTN, 2.0), "restart", |p, r| icon_glyph(p, r, crate::widgets::Icon::Restart, 15.0), "Start over").clicked() {
                     restart = true;
