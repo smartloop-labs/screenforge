@@ -412,13 +412,18 @@ impl App {
 
     /// Render and upload `project` for a share link in the background (one job per project:
     /// a newer request replaces a running one).
-    fn start_share(&mut self, project: PathBuf, source: crate::share::Source, ctx: &egui::Context) {
+    fn start_share(&mut self, project: PathBuf, source: crate::share::Source, details: Option<sf_engine::details::Details>, ctx: &egui::Context) {
         for job in self.shares.iter().filter(|j| j.project == project) {
             job.cancel();
         }
         self.shares.retain(|j| j.project != project);
-        let title = ed_name(&project);
-        self.shares.push(crate::share::ShareJob::start(project, title, source, ctx.clone()));
+        // the page shows the export's details: its title, description (with the chapters) and
+        // tags; without them, the project's name
+        let meta = match details {
+            Some(d) => crate::share::Meta { title: d.title.clone(), description: d.description.clone(), tags: d.tags.clone() },
+            None => crate::share::Meta { title: ed_name(&project), ..Default::default() },
+        };
+        self.shares.push(crate::share::ShareJob::start(project, meta, source, ctx.clone()));
     }
 
     /// Follow the share jobs: a finished one copies its link and says so in a notification
@@ -433,8 +438,9 @@ impl App {
             }
             if let Some(s) = ed.export.share_request.take() {
                 let path = ed.path.clone();
+                let details = ed.export.share_details.take();
                 ed.save();
-                self.start_share(path, s, ctx);
+                self.start_share(path, s, details, ctx);
             }
         }
         let mut finished = Vec::new();
@@ -449,16 +455,17 @@ impl App {
         };
         let editor_path = editor.as_ref().map(|ed| ed.path.clone());
         let mut status: Option<String> = None;
-        let mut last_link: Option<Result<String, String>> = None;
+        let mut last_link: Option<Result<crate::share::Shared, String>> = None;
         for job in &self.shares {
             let mine = editor_path.as_ref() == Some(&job.project);
             match &job.result {
-                Some(Ok(url)) if finished.contains(&job.project) => {
+                Some(Ok(shared)) if finished.contains(&job.project) => {
+                    let url = &shared.url;
                     ctx.copy_text(url.clone());
                     crate::os::notify("Your share link is ready", &format!("“{}” is uploaded. The link is on your clipboard: {url}", job.title));
                     if mine {
                         status = Some(format!("Share link copied: {url}"));
-                        last_link = Some(Ok(url.clone()));
+                        last_link = Some(Ok(shared.clone()));
                     }
                 }
                 Some(Err(e)) if finished.contains(&job.project) && !crate::share::is_cancel(e) => {
@@ -662,14 +669,56 @@ fn drop_unused_appended(project: &std::path::Path) {
 /// video file (`.mov`, `.mp4`, `.m4v`) made into a new project (progress in ms of video).
 fn open_or_import(path: &std::path::Path, progress: &sf_project::ImportProgress) -> anyhow::Result<PathBuf> {
     use std::sync::atomic::Ordering;
+    if let Some(link) = loom_link(path) {
+        return import_loom(&link, progress);
+    }
     if !sf_recording::import::is_video(path) {
         return sf_session::create::package_to_open(path, progress);
     }
     let probe = sf_recording::import::probe(path)?;
     progress.total.store(probe.duration_ms.max(1.0) as u64, Ordering::Relaxed);
+    import_video_file(path, &probe, progress, |ms| ms as u64)
+}
+
+/// The Loom share link an "open" path stands for (`begin_open` takes a pasted link as a path).
+pub(crate) fn loom_link(path: &std::path::Path) -> Option<String> {
+    let s = path.to_string_lossy();
+    sf_recording::loom::is_link(&s).then(|| s.trim().to_string())
+}
+
+/// Parts of a Loom import's progress (`ImportProgress` counts to [`LOOM_STEPS`]): the download
+/// is the first half, turning the video into a project the second.
+const LOOM_STEPS: u64 = 1000;
+
+/// A Loom share link downloaded, then imported like a video file; the project takes the
+/// video's title in Loom.
+fn import_loom(link: &str, progress: &sf_project::ImportProgress) -> anyhow::Result<PathBuf> {
+    use std::sync::atomic::Ordering;
+    progress.total.store(LOOM_STEPS, Ordering::Relaxed);
+    let half = LOOM_STEPS / 2;
+    let tmp = crate::recorder::recordings_folder().join(format!("Loom download {}", chrono::Local::now().format("%Y-%m-%d %H.%M.%S")));
+    let cancelled = || progress.cancel.load(Ordering::Relaxed);
+    let result = (|| {
+        let file = sf_recording::loom::download(link, &tmp, |f| progress.done.store((f * half as f64) as u64, Ordering::Relaxed), &progress.cancel)?;
+        progress.done.store(half, Ordering::Relaxed);
+        let probe = sf_recording::import::probe(&file)?;
+        let total = probe.duration_ms.max(1.0);
+        import_video_file(&file, &probe, progress, |ms| half + (ms / total * half as f64) as u64)
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    match result {
+        Err(_) if cancelled() => Err(sf_project::Error::Cancelled.into()),
+        r => r,
+    }
+}
+
+/// `path` (a video ffprobe read as `probe`) as a new project named after the file. `step`
+/// turns ms of video converted into the progress count.
+fn import_video_file(path: &std::path::Path, probe: &sf_recording::import::Probe, progress: &sf_project::ImportProgress, step: impl Fn(f64) -> u64) -> anyhow::Result<PathBuf> {
+    use std::sync::atomic::Ordering;
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Video".into());
     let dir = crate::recorder::recordings_folder().join(format!("Import {} {}", name, chrono::Local::now().format("%Y-%m-%d %H.%M.%S")));
-    sf_recording::import::import_video(path, &dir, |ms| progress.done.store(ms as u64, Ordering::Relaxed), &progress.cancel)?;
+    sf_recording::import::import_video(path, &dir, |ms| progress.done.store(step(ms), Ordering::Relaxed), &progress.cancel)?;
     // a tall, phone-shaped video starts in a phone frame, like a Device recording
     let tall = probe.height as f64 >= probe.width as f64 * 1.6;
     let opts = sf_session::create::CreateOptions { name, projects_folder: sf_session::create::default_projects_folder(), default_config: None, create_automatic_zooms: false, markers_ms: vec![], device_mockup: tall };
@@ -707,7 +756,8 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
     let started = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(started_id, std::time::Instant::now));
     let gb = |b: u64| b as f64 / 1e9;
     // a video (or a project being added) reports ms of video converted, an import bytes copied
-    let video = appending || sf_recording::import::is_video(path);
+    let loom = loom_link(path).is_some();
+    let video = appending || loom || sf_recording::import::is_video(path);
     let adding_video = appending && sf_recording::import::is_video(path);
     let clock = |ms: u64| short_duration(ms as f64 / 1000.0);
 
@@ -723,9 +773,9 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
             widgets::paint_icon(ui.painter(), egui::Rect::from_center_size(tile.center(), vec2(18.0, 18.0)), Icon::Folder, pal.accent);
             ui.vertical(|ui| {
                 ui.add_space(2.0);
-                ui.label(RichText::new(if adding_video { "Adding video to project" } else if appending { "Adding project to the end" } else if video { "Importing video" } else { "Importing project" }).size(15.0).strong().color(pal.text));
+                ui.label(RichText::new(if loom { "Importing from Loom" } else if adding_video { "Adding video to project" } else if appending { "Adding project to the end" } else if video { "Importing video" } else { "Importing project" }).size(15.0).strong().color(pal.text));
                 ui.add_space(3.0);
-                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let name = if loom { path.to_string_lossy().into_owned() } else { path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() };
                 ui.add(egui::Label::new(RichText::new(name).size(12.5).color(pal.text_dim)).truncate());
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -742,7 +792,7 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
         ui.add_space(10.0);
 
         ui.horizontal(|ui| {
-            let amount = if video { format!("{} of {}", clock(done), clock(total)) } else { format!("{:.2} of {:.2} GB", gb(done), gb(total)) };
+            let amount = if loom { (if done < LOOM_STEPS / 2 { "Downloading the video…" } else { "Making the project…" }).to_string() } else if video { format!("{} of {}", clock(done), clock(total)) } else { format!("{:.2} of {:.2} GB", gb(done), gb(total)) };
             ui.label(RichText::new(amount).size(12.5).color(pal.text_dim));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let el = started.elapsed().as_secs_f64();
@@ -758,7 +808,7 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_max_width(ui.available_width() - 100.0);
-                widgets::hint(ui, if adding_video { "The video goes after the last clip on the timeline. Your video file stays as it is." } else if appending { "Its clips go after the last one on the timeline, in this project's background and style. The project you dropped stays as it is." } else if video { "Your video stays as it is. The new project is saved to ScreenForge Projects." } else { "Your original project stays as it is. The copy is saved to ScreenForge Projects." });
+                widgets::hint(ui, if loom { "Your Loom video stays as it is. The new project is saved to ScreenForge Projects." } else if adding_video { "The video goes after the last clip on the timeline. Your video file stays as it is." } else if appending { "Its clips go after the last one on the timeline, in this project's background and style. The project you dropped stays as it is." } else if video { "Your video stays as it is. The new project is saved to ScreenForge Projects." } else { "Your original project stays as it is. The copy is saved to ScreenForge Projects." });
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let cancel = ui.add_enabled_ui(!cancelling, |ui| widgets::secondary_button(ui, "Cancel").on_hover_text("Esc")).inner;
@@ -777,36 +827,98 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
 enum BlankAction {
     Choose,
     Home,
+    /// A Loom share link to import.
+    Loom(String),
 }
 
 /// The new, empty project: a drop zone for a screencast or video, or a file to choose.
 fn blank_ui(ui: &mut egui::Ui) -> Option<BlankAction> {
     use crate::widgets;
+    use egui::{pos2, vec2, Align, Align2, FontId, Layout, Rect, UiBuilder};
     let pal = crate::theme::p();
     let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 0.0, pal.bg);
-    let zone = egui::Rect::from_center_size(rect.center(), egui::vec2((rect.width() - 120.0).min(640.0), (rect.height() - 160.0).min(360.0)));
+    let zone = Rect::from_center_size(rect.center(), vec2((rect.width() - 120.0).min(640.0), (rect.height() - 120.0).min(440.0)));
     // a dashed outline, like a drop target
     let dash = |a: egui::Pos2, b: egui::Pos2| ui.painter().extend(egui::Shape::dashed_line(&[a, b], egui::Stroke::new(1.5, pal.border), 8.0, 6.0));
     dash(zone.left_top(), zone.right_top());
     dash(zone.right_top(), zone.right_bottom());
     dash(zone.right_bottom(), zone.left_bottom());
     dash(zone.left_bottom(), zone.left_top());
-    let c = zone.center();
-    widgets::paint_icon(ui.painter(), egui::Rect::from_center_size(egui::pos2(c.x, c.y - 70.0), egui::vec2(34.0, 34.0)), widgets::Icon::Plus, pal.text_dim);
-    ui.painter().text(egui::pos2(c.x, c.y - 22.0), egui::Align2::CENTER_CENTER, "Drop a screencast or video here", egui::FontId::proportional(18.0), pal.text);
-    ui.painter().text(egui::pos2(c.x, c.y + 6.0), egui::Align2::CENTER_CENTER, "A .mov, .mp4 or .m4v becomes a new project you can edit", egui::FontId::proportional(13.0), pal.text_dim);
+
+    // one column, everything lined up on its edges: the drop target, its two buttons, then
+    // "or import from Loom" with the link field and Import under it
+    let w = 400.0_f32.min(zone.width() - 48.0);
+    let h = widgets::BUTTON_H.max(36.0);
+    let total = 34.0 + 18.0 + 22.0 + 10.0 + 16.0 + 24.0 + h + 30.0 + 14.0 + 16.0 + h + 10.0 + 16.0;
+    let (cx, mut y) = (zone.center().x, zone.center().y - total / 2.0);
+    let left = cx - w / 2.0;
+    let painter = ui.painter().clone();
+    widgets::paint_icon(&painter, Rect::from_center_size(pos2(cx, y + 17.0), vec2(34.0, 34.0)), widgets::Icon::Plus, pal.text_dim);
+    y += 34.0 + 18.0;
+    painter.text(pos2(cx, y + 11.0), Align2::CENTER_CENTER, "Drop a screencast or video here", FontId::proportional(18.0), pal.text);
+    y += 22.0 + 10.0;
+    painter.text(pos2(cx, y + 8.0), Align2::CENTER_CENTER, "A .mov, .mp4 or .m4v becomes a new project you can edit", FontId::proportional(13.0), pal.text_dim);
+    y += 16.0 + 24.0;
+
     let mut action = None;
-    let buttons = egui::Rect::from_center_size(egui::pos2(c.x, c.y + 56.0), egui::vec2(360.0, 36.0));
-    ui.scope_builder(egui::UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center).with_main_justify(false)), |ui| {
-        ui.add_space(((buttons.width() - 300.0) / 2.0).max(0.0));
+    // a box of `width` at `x` on this row, its button stretched to fill it
+    let cell = |ui: &mut egui::Ui, x: f32, y: f32, width: f32, add: &mut dyn FnMut(&mut egui::Ui)| {
+        ui.scope_builder(UiBuilder::new().max_rect(Rect::from_min_size(pos2(x, y), vec2(width, h))).layout(Layout::top_down_justified(Align::Center)), |ui| {
+            ui.spacing_mut().interact_size.y = h;
+            add(ui)
+        });
+    };
+    let half = (w - 8.0) / 2.0;
+    cell(ui, left, y, half, &mut |ui| {
         if widgets::accent_button(ui, "Choose a video…").clicked() {
             action = Some(BlankAction::Choose);
         }
+    });
+    cell(ui, left + half + 8.0, y, half, &mut |ui| {
         if widgets::secondary_button(ui, "Back to projects").clicked() {
             action = Some(BlankAction::Home);
         }
     });
+    y += h + 30.0;
+
+    // ── or import from Loom ──
+    let label = painter.layout_no_wrap("or import from Loom".into(), FontId::proportional(12.5), pal.text_dim);
+    let mid = y + 7.0;
+    let gap = label.size().x / 2.0 + 10.0;
+    painter.hline(left..=cx - gap, mid, egui::Stroke::new(1.0, pal.border));
+    painter.hline(cx + gap..=left + w, mid, egui::Stroke::new(1.0, pal.border));
+    painter.galley(pos2(cx - label.size().x / 2.0, mid - label.size().y / 2.0), label, pal.text_dim);
+    y += 14.0 + 16.0;
+
+    // the link (kept in the UI's memory while the window is open) and Import, one row
+    let id = egui::Id::new("blank_loom_link");
+    let mut link: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    let ok = sf_recording::loom::is_link(&link);
+    let import_w = 96.0;
+    let mut submit = false;
+    let field_w = w - import_w - 8.0;
+    ui.scope_builder(UiBuilder::new().max_rect(Rect::from_min_size(pos2(left, y), vec2(field_w, h))).layout(Layout::left_to_right(Align::Center)), |ui| {
+        ui.set_width(field_w);
+        let field = widgets::text_field(ui, &mut link, "loom.com/share/…");
+        submit |= widgets::submitted(ui, &field);
+    });
+    cell(ui, left + field_w + 8.0, y, import_w, &mut |ui| {
+        if ui.add_enabled_ui(ok, |ui| widgets::secondary_button(ui, "Import")).inner.on_hover_text("Download the Loom video and make a project of it").clicked() {
+            submit = true;
+        }
+    });
+    y += h + 10.0;
+    let typed = !link.trim().is_empty();
+    let ok = sf_recording::loom::is_link(&link);
+    let (note, color) = if typed && !ok { ("That is not a Loom video link. Copy it from Share in Loom.", pal.danger) } else { ("Public Loom videos only. Their camera bubble stays in the picture.", pal.text_faint) };
+    let galley = painter.layout(note.to_string(), FontId::proportional(12.0), color, w);
+    painter.galley(pos2(cx - galley.size().x / 2.0, y), galley, color);
+    if submit && ok {
+        action = Some(BlankAction::Loom(link.trim().to_string()));
+        link.clear();
+    }
+    ui.data_mut(|d| d.insert_temp(id, link));
     action
 }
 
@@ -1096,6 +1208,7 @@ impl eframe::App for App {
             Screen::Blank => match blank_ui(ui) {
                 Some(BlankAction::Choose) => self.ask(ctx, pick_video, &mut open_request),
                 Some(BlankAction::Home) => go_home = true,
+                Some(BlankAction::Loom(link)) => open_request = Some(PathBuf::from(link)),
                 None => {}
             },
             Screen::Opening(path, rx, progress) => {

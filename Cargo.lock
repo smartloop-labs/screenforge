@@ -4750,6 +4750,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "ureq 2.12.1",
  "which",
  "windows",
  "x11rb",

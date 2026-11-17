@@ -32,6 +32,13 @@ fn route() -> Result<Route, String> {
     Ok(Route { url: format!("{}/functions/v1/agent", sf_license::SUPABASE_URL), anon_key: sf_license::SUPABASE_ANON_KEY.into(), device })
 }
 
+/// How Export asks Claude for a video's title, description and tags: the agent's route and the
+/// model chosen in the agent panel. `None` when this computer cannot be identified.
+pub fn details_route() -> Option<(Route, &'static str)> {
+    let model = settings_path().map(|p| Settings::load(&p)).unwrap_or_default().pick();
+    route().ok().map(|r| (r, model))
+}
+
 /// The editor's side of the agent: catalogs gathered on the UI thread when a turn starts, and
 /// what needs files or the network (presets, Unsplash, imports), run on the agent's thread.
 struct StudioHost {
@@ -437,6 +444,12 @@ fn credits_label(n: f64) -> String {
 
 impl AgentPanel {
     /// Ask the backend for this computer's balance.
+    /// Whether the agent (AI) is on for this computer, as the backend last said: `None` until
+    /// it has answered.
+    pub fn ai_allowed(&self) -> Option<bool> {
+        self.credits.as_ref().and_then(|c| c["allowed"].as_bool())
+    }
+
     fn fetch_credits(&mut self) {
         if self.credits_rx.is_some() {
             return;
