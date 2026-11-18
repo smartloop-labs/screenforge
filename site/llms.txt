@@ -1,0 +1,39 @@
+# ScreenForge
+
+> ScreenForge is a screen recorder with an AI video editor built in, for macOS, Windows and Linux. Record your screen, webcam or (on a Mac) an iPhone or iPad, or drop in any MP4 or MOV, then ask for the edit in plain language: cuts, zooms, speed, captions, music, backgrounds and voice-over. Or fine-tune it by hand on the timeline.
+
+ScreenForge is made for tutorials, product demos, lessons, promos, talking-head videos and async video messages. It is open source, and free to try: record, edit and export twice before you pay.
+
+## Pages
+
+- [Home](https://screenforge.studio/): what ScreenForge does, with a demo of the AI agent editing a screencast from one prompt
+- [Download](https://screenforge.studio/download): installers for macOS 14 or later, Windows 10 or later, and Linux (.deb and tar.gz)
+- [Pricing](https://screenforge.studio/pricing): free trial; Pro at US$20/month with the AI editing agent, 1,000 credits a month and share links; Creator license at US$49 once. Includes the FAQ
+- [Comparison](https://screenforge.studio/comparison): Jam vs Screen Studio vs ScreenForge, a Screen Studio alternative for Windows and Linux
+- [Release notes](https://screenforge.studio/releases/): every version and what changed
+- [Privacy policy](https://screenforge.studio/privacy): what stays on your computer and when the app goes online
+- [Spanish site](https://screenforge.studio/es/)
+
+## Features
+
+- AI editing agent: describe the edit ("cut the ums and long pauses", "zoom on my clicks", "get this under a minute") and it makes it
+- AI voice-over narration, with on-device voices or studio-quality ElevenLabs voices
+- My voice: clone your own voice once and narrate in it (ElevenLabs, with your consent)
+- Voice-over recording on its own track, plus clean-up and re-voicing
+- Automatic captions with on-device Whisper
+- Automatic zooms that follow your clicks, and a smooth cursor with six styles
+- Camera recording with face tracking
+- Microphone boost (+6, +12 or +18 dB) with a limiter
+- Backgrounds, color grading, crop, blur and highlight masks, keyboard shortcut overlay
+- iPhone and iPad recording on macOS, with device frames
+- Edit any MP4, MOV or M4V; import Loom videos from a share link
+- Share links that play in any browser; AI-written titles, descriptions and tags for YouTube
+- Export to MP4 (H.264 or HEVC), ProRes, WebM or GIF, up to 4K
+
+## Links
+
+- Source code: https://github.com/smartloop-labs/screenforge
+- YouTube: https://www.youtube.com/channel/UC0dLM62U4eXzF0Qj1lUxkCg
+- X: https://x.com/ScreenForgeHQ
+- TikTok: https://www.tiktok.com/@screenforgehq
+- Support: https://github.com/smartloop-labs/screenforge/issues
