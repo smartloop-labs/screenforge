@@ -10,6 +10,7 @@ edit to index, pricing, download or comparison:
     python3 scripts/site_es.py
 """
 import re, pathlib
+import site_partials  # the shared footer
 
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'site'
 PAGES = ['index.html', 'pricing.html', 'download.html', 'comparison.html']
@@ -88,7 +89,7 @@ LANG_JS = '''    paint();
   })();
 </script>'''
 
-# ── copy shared by every page: nav, switch labels, footer, theme script ─────
+# ── copy shared by every page: nav, switch labels, theme script (the footer is scripts/site/footer.es.html) ─────
 COMMON = [
     ('<a href="index.html#features">Features</a>', '<a href="index.html#features">Funciones</a>'),
     ('<a href="#features">Features</a>', '<a href="#features">Funciones</a>'),
@@ -99,12 +100,6 @@ COMMON = [
     ('aria-label="Light theme" title="Switch to dark"', 'aria-label="Tema claro" title="Cambiar a oscuro"'),
     ("sw.setAttribute('aria-label', dark ? 'Dark theme' : 'Light theme');", "sw.setAttribute('aria-label', dark ? 'Tema oscuro' : 'Tema claro');"),
     ("sw.title = dark ? 'Switch to light' : 'Switch to dark';", "sw.title = dark ? 'Cambiar a claro' : 'Cambiar a oscuro';"),
-    ('<span>© 2026 Smartloop Inc. All rights reserved.</span>', '<span>© 2026 Smartloop Inc. Todos los derechos reservados.</span>'),
-    ('<span>Made in San Francisco, CA</span>', '<span>Hecho en San Francisco, CA</span>'),
-    ('<a href="comparison.html">compare</a>', '<a href="comparison.html">comparar</a>'),
-    ('<a href="privacy.html">privacy</a>', '<a href="privacy.html">privacidad</a>'),
-    ('<a href="terms.html">terms</a>', '<a href="terms.html">términos</a>'),
-    ('aria-label="ScreenForge on X" title="@ScreenForgeHQ on X"', 'aria-label="ScreenForge en X" title="@ScreenForgeHQ en X"'),
 ]
 
 # ── index ───────────────────────────────────────────────────────────────────
@@ -163,6 +158,7 @@ INDEX = [
      '''      Grabador de pantalla y editor de vídeo con IA en una app. Graba la pantalla de tu <span class="os-name">Mac</span> o abre un vídeo,
       y pide la edición o afínala a mano.'''),
     ('<span class="os-label">Download for macOS</span>', '<span class="os-label">Descargar para macOS</span>', 2),
+    ('<span class="gr">Backed by', '<span class="gr">Con el apoyo de'),
     ('<span class="note os-note">Free to try · <a href="pricing.html">Pro</a> adds the AI agent · also on <a href="download.html#windows">Windows</a> and <a href="download.html#linux">Linux</a></span>',
      '<span class="note os-note">Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA · también en <a href="download.html#windows">Windows</a> y <a href="download.html#linux">Linux</a></span>'),
     ('aria-label="The ScreenForge agent editing a recording from one prompt: it trims the video under a minute, speeds up the waits, adds background music, an Unsplash photo of mountains as the wallpaper, and AI narration with captions"',
@@ -576,6 +572,7 @@ def translate(page, en):
     # body: the switch, then the copy
     en_href, es_href = spanish_hrefs(page)
     body = must(body, lang_switch('en', *english_hrefs(page)), lang_switch('es', en_href, es_href))
+    body = re.sub(r'<footer>.*?</footer>', '<footer></footer>', body, count=1, flags=re.S)
     for row in COMMON:
         body = maybe(body, *row)
     for row in m['table']:
@@ -584,6 +581,7 @@ def translate(page, en):
         body = body.replace(f'src="{a}', f'src="../{a}').replace(f'poster="{a}', f'poster="../{a}')
     for p in ENGLISH_ONLY:
         body = body.replace(f'href="{p}', f'href="../{p}')
+    body = must(body, '<footer></footer>', site_partials.footer(ROOT / 'es' / page))
     # anything left in English that we know the shape of
     leftovers = re.findall(r'>(Download|Pricing|Features|Platforms|Install|Step \d|Yes|Free)<', body)
     assert not leftovers, leftovers
