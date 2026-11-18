@@ -200,34 +200,6 @@
     background: radial-gradient(50% 55% at 50% 0%, color-mix(in srgb, var(--jade) 12%, transparent), transparent 70%);
     pointer-events: none;
   }
-  /* the voice wave above the download buttons: thin sine waves drawn by a WebGL shader
-     (a dot wave without WebGL), fading out towards the edges */
-  .voice {
-    position: absolute; left: 0; right: 0; top: 52px; height: 112px; pointer-events: none;
-    display: flex; align-items: center; justify-content: center; gap: 6px; overflow: hidden; --amp: 26px;
-    --fade: linear-gradient(90deg, transparent 4%, #000 30%, #000 70%, transparent 96%);
-    -webkit-mask-image: var(--fade); mask-image: var(--fade);
-    opacity: .7; animation: voice-in 1.2s ease-out both;
-  }
-  .voice canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .voice i { flex: none; position: relative; width: 4px; height: 100%; }
-  .voice i::before, .voice i::after {
-    content: ''; position: absolute; left: 0; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%;
-    background: color-mix(in srgb, var(--jade) 70%, var(--line-2));
-    animation: bob 2.6s ease-in-out var(--d) infinite alternate;
-  }
-  .voice i::after { opacity: .45; animation-delay: calc(var(--d) - 1.3s); }
-  @keyframes bob {
-    from { transform: translateY(calc(var(--h) * var(--amp) * -1)); }
-    to { transform: translateY(calc(var(--h) * var(--amp))); }
-  }
-  @keyframes voice-in { from { opacity: 0; } }
-  .voice-band { position: relative; height: 56px; margin: 14px 0 -16px; }
-  .voice-band .voice { top: 0; height: 100%; left: -8%; right: -8%; }
-  .close .voice-band { margin: 18px 0 -16px; }
-  .close .voice { opacity: .55; }
-  @media (prefers-reduced-motion: reduce) { .voice, .voice i::before, .voice i::after { animation: none; } }
-  @media (max-width: 560px) { .voice-band { height: 60px; } }
   .hero-in { position: relative; z-index: 1; text-align: center; }
 
   /* Record → Edit → Export, quietly beside the heading */
@@ -472,9 +444,22 @@
   .close .cta { justify-content: center; }
 
   footer {
-    border-top: 1px solid var(--line); padding: 56px 0 30px;
+    position: relative; padding: 56px 0 30px;
     color: var(--dim); font-family: var(--mono); font-size: 12px; letter-spacing: .01em;
   }
+  /* a thin voice line along the top of the footer: three sine waves drifting at different speeds */
+  .foot-wave {
+    position: absolute; left: 0; right: 0; top: -20px; height: 40px; overflow: hidden; pointer-events: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+  }
+  .foot-wave svg { display: block; }
+  .foot-wave path { stroke-width: 1.2; stroke-linecap: round; animation: drift linear infinite; }
+  .foot-wave .w1 { stroke: var(--jade); opacity: .55; --p: -320px; animation-duration: 16s; }
+  .foot-wave .w2 { stroke: var(--jade-deep); opacity: .4; --p: -440px; animation-duration: 26s; }
+  .foot-wave .w3 { stroke: var(--gold); opacity: .45; --p: -250px; animation-duration: 11s; }
+  @keyframes drift { to { transform: translateX(var(--p)); } }
+  @media (prefers-reduced-motion: reduce) { .foot-wave path { animation: none; } }
   .foot-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 40px 64px; }
   .foot-id { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; max-width: 280px; }
   .foot-brand {
@@ -581,60 +566,6 @@ gtag('config', 'G-ZYRJDJ736V');
       A screen recorder with integrated AI to supercharge your video editing. Record your screen on Mac, Windows or Linux, or drop in any video,
       then ask for the edit or fine-tune it by hand.
     </p>
-    <div class="voice-band" aria-hidden="true"><div class="voice"></div></div>
-    <script>
-    // The voice wave: glowing ribbons drawn by a small WebGL shader in the theme's accent colours,
-    // flowing behind the app icon and fading out at the edges. Without WebGL it falls back to a dot wave.
-    window.sfVoice = function (el) {
-      var cv = document.createElement('canvas'), gl = cv.getContext('webgl', { premultipliedAlpha: true, antialias: true });
-      if (!gl) {
-        var n = Math.min(150, Math.ceil(window.innerWidth / 10)), html = '';
-        for (var i = 0; i < n; i++) {
-          var x = i / (n - 1) - 0.5, h = 0.25 + 0.75 * Math.exp(-x * x / 0.05);
-          html += '<i style="--h:' + h.toFixed(3) + ';--d:-' + (Math.abs(x) * 9).toFixed(2) + 's"></i>';
-        }
-        el.innerHTML = html; return;
-      }
-      el.appendChild(cv);
-      var fs = 'precision mediump float;uniform vec2 r;uniform float t,px,amp;uniform vec3 c0,c1,c2;' +
-        'void main(){vec2 uv=gl_FragCoord.xy/r;float x=uv.x,y=(uv.y-.5)*r.y,e=exp(-pow((x-.5)/.26,2.));' +
-        'vec3 col=vec3(0.);float a=0.;for(int k=0;k<5;k++){float f=float(k),m=mod(f,3.);' +
-        'float w=amp*(.12+.88*e)*(1.-f*.14)*sin(x*(7.+f*1.7)-t*(.8+f*.22)+f*1.3);' +
-        'float d=abs(y-w),g=exp(-d*d/(2.*pow(.6*px,2.)))+.06*exp(-d/(3.*px));' +
-        'vec3 c=m<.5?c0:(m<1.5?c1:c2);col+=c*g;a+=g;}' +
-        'col/=max(a,1e-4);a=clamp(a,0.,1.)*smoothstep(0.,.22,x)*smoothstep(1.,.78,x);gl_FragColor=vec4(col*a,a);}';
-      function sh(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; }
-      var p = gl.createProgram();
-      gl.attachShader(p, sh(gl.VERTEX_SHADER, 'attribute vec2 q;void main(){gl_Position=vec4(q,0.,1.);}'));
-      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
-      gl.linkProgram(p); gl.useProgram(p);
-      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-      var U = {}; ['r', 't', 'px', 'amp', 'c0', 'c1', 'c2'].forEach(function (k) { U[k] = gl.getUniformLocation(p, k); });
-      var probe = document.createElement('canvas').getContext('2d');
-      function rgb(name) {
-        probe.fillStyle = '#000'; probe.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#000';
-        var h = probe.fillStyle; return [1, 3, 5].map(function (i) { return parseInt(h.substr(i, 2), 16) / 255; });
-      }
-      function colours() { gl.uniform3fv(U.c0, rgb('--jade')); gl.uniform3fv(U.c1, rgb('--jade-deep')); gl.uniform3fv(U.c2, rgb('--gold')); }
-      function size() {
-        var d = Math.min(2, window.devicePixelRatio || 1), w = el.clientWidth * d, h = el.clientHeight * d;
-        cv.width = w; cv.height = h; gl.viewport(0, 0, w, h);
-        gl.uniform2f(U.r, w, h); gl.uniform1f(U.px, d); gl.uniform1f(U.amp, h * 0.36);
-      }
-      colours(); size();
-      new MutationObserver(function () { colours(); if (still) draw(2); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-      var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches, on = true;
-      function draw(t) { gl.uniform1f(U.t, t); gl.drawArrays(gl.TRIANGLES, 0, 3); }
-      window.addEventListener('resize', function () { size(); if (still) draw(2); });
-      if (still) { draw(2); return; }
-      new IntersectionObserver(function (es) { on = es[0].isIntersecting; if (on) requestAnimationFrame(loop); }).observe(el);
-      function loop(ms) { if (!on) return; draw(ms / 1000); requestAnimationFrame(loop); }
-      requestAnimationFrame(loop);
-    };
-    sfVoice(document.querySelector('.hero .voice'));
-    </script>
     <div class="cta">
       <a class="go os-dl" href="download.html#mac">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
@@ -814,8 +745,6 @@ gtag('config', 'G-ZYRJDJ736V');
   <div class="wrap">
     <div class="sec-label">Get started</div>
     <h2>Record your first clip in <em>a minute.</em></h2>
-    <div class="voice-band" aria-hidden="true"><div class="voice"></div></div>
-    <script>sfVoice(document.querySelector('.close .voice'));</script>
     <div class="cta">
       <a class="go os-dl" href="download.html#mac"><span class="os-label">Download for macOS</span></a>
     </div>
@@ -823,6 +752,7 @@ gtag('config', 'G-ZYRJDJ736V');
 </div>
 
 <footer>
+  <div class="foot-wave" aria-hidden="true"><svg width="3200" height="40" viewBox="0 0 3200 40" fill="none"><path class="w1" d="M0 20 Q80 6 160 20 T320 20 T480 20 T640 20 T800 20 T960 20 T1120 20 T1280 20 T1440 20 T1600 20 T1760 20 T1920 20 T2080 20 T2240 20 T2400 20 T2560 20 T2720 20 T2880 20 T3040 20 T3200 20"/><path class="w2" d="M0 20 Q110 0 220 20 T440 20 T660 20 T880 20 T1100 20 T1320 20 T1540 20 T1760 20 T1980 20 T2200 20 T2420 20 T2640 20 T2860 20 T3080 20 T3300 20"/><path class="w3" d="M0 20 Q62.5 11 125 20 T250 20 T375 20 T500 20 T625 20 T750 20 T875 20 T1000 20 T1125 20 T1250 20 T1375 20 T1500 20 T1625 20 T1750 20 T1875 20 T2000 20 T2125 20 T2250 20 T2375 20 T2500 20 T2625 20 T2750 20 T2875 20 T3000 20 T3125 20 T3250 20"/></svg></div>
   <div class="wrap">
     <div class="foot-top">
       <div class="foot-id">
