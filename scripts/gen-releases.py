@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Release notes pages for the site, built from the GitHub releases.
+"""The site's changelog pages, built from the GitHub releases.
 
-Writes into site/releases/ (generated, not committed):
+Writes into site/changelog/ (generated, not committed; site/_redirects sends the old
+/releases/ URLs here):
   index.html          the digest: every release, newest first, grouped by month
   v<X.Y.Z>/index.html one page per release, with its downloads
   feed.xml            Atom feed of recent releases
@@ -32,7 +33,7 @@ REPO = os.environ.get("REPO", "mehfuzh/screenforge")
 SITE = "https://screenforge.studio"
 ROOT = Path(__file__).resolve().parent.parent
 SITE_DIR = ROOT / "site"
-OUT = SITE_DIR / "releases"
+OUT = SITE_DIR / "changelog"
 # commit subjects that are not changes to the app
 SKIP = re.compile(r"^(Release \d|Merge |Cargo\.lock|Site:|Site |CI\b|ci:|Update screencast\b|README)", re.I)
 # how many changes the digest shows per release before "and n more"
@@ -156,8 +157,8 @@ def downloads(r):
 
 def release_page(t, r, newer, older):
     v, d, items = version(r), date(r), changes(r["body"])
-    url = f"{SITE}/releases/v{v}/"
-    title = f"ScreenForge {v} release notes"
+    url = f"{SITE}/changelog/v{v}/"
+    title = f"ScreenForge {v} changelog"
     lis = "\n".join(f"    <li>{inline(i)}</li>" for i in items) or "    <li>Maintenance release: fixes and internal changes.</li>"
     dl = downloads(r)
     ld = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "ScreenForge", "softwareVersion": v, "datePublished": d.strftime("%Y-%m-%d"), "operatingSystem": "macOS, Windows, Linux", "applicationCategory": "MultimediaApplication", "url": url, "releaseNotes": url, "downloadUrl": r["html_url"]}
@@ -165,7 +166,7 @@ def release_page(t, r, newer, older):
     pager += f'<a href="../v{version(older)}/">← {version(older)}</a>' if older else "<span></span>"
     pager += f'<a href="../v{version(newer)}/">{version(newer)} →</a>' if newer else "<span></span>"
     pager += "</nav>"
-    body = f"""  <div class="eyebrow"><a href="../">Release notes</a></div>
+    body = f"""  <div class="eyebrow"><a href="../">Changelog</a></div>
   <h1>ScreenForge {v}</h1>
   <p class="stamp">Released <time datetime="{d.strftime('%Y-%m-%d')}">{long_date(d)}</time></p>
 
@@ -178,12 +179,12 @@ def release_page(t, r, newer, older):
   {'<div class="dl">' + ''.join(dl) + '</div>' if dl else ''}
   <p>Or get the newest version from the <a href="../../download.html">download page</a>. Every file and the full changelog are on <a href="{html.escape(r['html_url'])}">GitHub</a>.</p>
   {pager}"""
-    extra = f'<script type="application/ld+json">{json.dumps(ld)}</script>\n<link rel="alternate" type="application/atom+xml" title="ScreenForge releases" href="{SITE}/releases/feed.xml">\n'
+    extra = f'<script type="application/ld+json">{json.dumps(ld)}</script>\n<link rel="alternate" type="application/atom+xml" title="ScreenForge changelog" href="{SITE}/changelog/feed.xml">\n'
     return t.page(2, url, title, f"ScreenForge {v} ({long_date(d)}): " + summary(items, 120), body, extra)
 
 
 def digest_page(t, releases):
-    url = f"{SITE}/releases/"
+    url = f"{SITE}/changelog/"
     latest = releases[0]
     months, order = {}, []
     for r in releases:
@@ -207,13 +208,13 @@ def digest_page(t, releases):
 {shown}
     </ul>{more}
   </article>""")
-    body = f"""  <div class="eyebrow">Release notes</div>
+    body = f"""  <div class="eyebrow">Changelog</div>
   <h1>What’s new in ScreenForge</h1>
   <p class="lede">Every update to ScreenForge, newest first. Open a version to see everything in it and download it. The app tells you when a new one is out, or you can <a href="feed.xml">follow updates with RSS</a>.</p>
 {chr(10).join(parts)}"""
-    extra = f'<link rel="alternate" type="application/atom+xml" title="ScreenForge releases" href="{SITE}/releases/feed.xml">\n'
+    extra = f'<link rel="alternate" type="application/atom+xml" title="ScreenForge changelog" href="{SITE}/changelog/feed.xml">\n'
     desc = f"What changed in each ScreenForge version, newest first. Latest: {version(latest)} ({long_date(date(latest))}): " + summary(changes(latest["body"]), 90)
-    return t.page(1, url, "ScreenForge release notes", desc, body, extra)
+    return t.page(1, url, "ScreenForge changelog", desc, body, extra)
 
 
 def feed(releases):
@@ -224,18 +225,18 @@ def feed(releases):
         content = "<ul>" + "".join(f"<li>{inline(i)}</li>" for i in items) + "</ul>"
         entries.append(f"""  <entry>
     <title>ScreenForge {v}</title>
-    <link href="{SITE}/releases/v{v}/"/>
-    <id>{SITE}/releases/v{v}/</id>
+    <link href="{SITE}/changelog/v{v}/"/>
+    <id>{SITE}/changelog/v{v}/</id>
     <updated>{r['published_at']}</updated>
     <summary>{e(summary(items, 200))}</summary>
     <content type="html">{e(content)}</content>
   </entry>""")
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>ScreenForge releases</title>
-  <link href="{SITE}/releases/"/>
-  <link rel="self" href="{SITE}/releases/feed.xml"/>
-  <id>{SITE}/releases/</id>
+  <title>ScreenForge changelog</title>
+  <link href="{SITE}/changelog/"/>
+  <link rel="self" href="{SITE}/changelog/feed.xml"/>
+  <id>{SITE}/changelog/</id>
   <updated>{releases[0]['published_at']}</updated>
   <author><name>ScreenForge</name></author>
 {chr(10).join(entries)}
@@ -244,7 +245,7 @@ def feed(releases):
 
 
 def sitemap(releases):
-    urls = [(f"{SITE}/releases/", date(releases[0]))] + [(f"{SITE}/releases/v{version(r)}/", date(r)) for r in releases]
+    urls = [(f"{SITE}/changelog/", date(releases[0]))] + [(f"{SITE}/changelog/v{version(r)}/", date(r)) for r in releases]
     rows = "\n".join(f"  <url><loc>{u}</loc><lastmod>{d.strftime('%Y-%m-%d')}</lastmod></url>" for u, d in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{rows}\n</urlset>\n'
 

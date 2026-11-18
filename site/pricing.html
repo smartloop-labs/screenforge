@@ -19,9 +19,11 @@
 <meta property="og:image" content="https://screenforge.studio/og.png?v=6">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ScreenForge app icon and logo: screen recordings that look professionally edited">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@ScreenForgeHQ">
 <meta name="twitter:image" content="https://screenforge.studio/og.png?v=6">
+<meta name="twitter:image:alt" content="ScreenForge app icon and logo: screen recordings that look professionally edited">
 <link rel="icon" href="favicon.ico?v=9" sizes="any">
 <link rel="icon" type="image/svg+xml" href="favicon.svg?v=9">
 <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=9">
@@ -464,6 +466,102 @@ function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', 'G-ZYRJDJ736V');
 </script>
+<script type="application/ld+json" data-faq>
+{
+ "@context": "https://schema.org",
+ "@type": "FAQPage",
+ "mainEntity": [
+  {
+   "@type": "Question",
+   "name": "What does the AI agent cost?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "What Claude charges for it, in credits: a short edit takes a few credits, an Auto edit of a long video more. The agent uses Claude Sonnet 5.5 unless you pick another model: Opus 5.5 uses credits twice as fast, Haiku 5.5 about 20 times slower. Pro includes 1,000 credits a month, enough for daily editing; packs top it up and never expire. The agent panel shows your balance and what each conversation used."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "What do the ElevenLabs voices cost?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "They come with Pro and use the same credits as the agent: about 8 credits per 1,000 characters of script, so a minute of narration is around 7 credits and 1,000 credits read about two hours. Hearing a voice's preview again is free. The six voices that run on your computer stay free for everyone."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "How do share links work?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "With Pro, check “Make a share link too” in Export: when the video is written, ScreenForge uploads it and puts a screenforge.studio/s/… link on your clipboard. Anyone with the link can watch it in a browser, no app or sign-in. Links are unlisted: not searchable and not guessable. Each project keeps one link, so exporting again updates the video behind it. A video can be up to 2 GB, and Export → Your links lists, copies and deletes them."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "How is the key checked?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "On your computer. The app verifies the key's signature locally, so exporting works offline. When it is online it briefly checks in with the license server, so a license moved to another computer stops working on the old one."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "How many computers can I use it on?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "One at a time. Activating on another computer moves the license there with a code emailed to the address you paid with, so nobody can use your license just by knowing your email, and you never need to contact us to switch Macs. The previous computer stops exporting the next time it is online."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Is there a subscription?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "No. You pay US$49 once and the key never expires. If you set up a new computer, enter the same email, press Activate and type the emailed code; it activates without a new purchase."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Can I get a refund?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Within 24 hours: the Creator license, no questions asked; Pro and top-ups, if none of their agent credits have been used. Cancel Pro any time. Email license@screenforge.studio from the address you paid with."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Why pay if the source is open?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "The license pays for what the source alone doesn't give you: the signed and notarized download that opens without warnings, the CI that builds and tests every release, and the time to keep it all working."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Do you have team or studio pricing?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Yes. For five seats or more, email license@screenforge.studio with how many people record. You get volume pricing, one invoice and a key for each teammate. See Studios & teams ."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Do I need an account?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "No. There is nothing to sign up for and nothing to sign in to. The email you pay with is the only identifier, and it exists so the key can reach you."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Does the app phone home?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Only when you press Activate or Buy, to send your email (and, for Activate, an anonymous code for the computer) to the license server; when you open a project on an activated computer, to check the license has not moved; the first time you make captions, to download a speech model, and once a day to ask GitHub whether a newer version is out (you can turn that off). Neither of the last two sends anything about you. There is no telemetry, no usage analytics and no crash reporting. Recordings and exports never leave your computer."
+   }
+  }
+ ]
+}
+</script>
 </head>
 <body>
 
@@ -640,7 +738,7 @@ gtag('config', 'G-ZYRJDJ736V');
       <a href="comparison.html">compare</a>
       <a href="privacy.html">privacy</a>
       <a href="terms.html">terms</a>
-      <a href="releases/">releases</a>
+      <a href="changelog/">changelog</a>
       <a class="x" href="https://x.com/ScreenForgeHQ" rel="me noopener" aria-label="ScreenForge on X" title="@ScreenForgeHQ on X"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
     </div>
   </div>
