@@ -3,11 +3,11 @@
 [![Rust](https://img.shields.io/badge/Rust-100%25-dea584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-3b82f6)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/mehfuzh/screenforge?sort=semver&label=Version&color=bd93f9)](https://github.com/mehfuzh/screenforge/releases/latest)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS%20.dmg-bd93f9?logo=apple&logoColor=white)](https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge.dmg)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS%20.dmg-bd93f9?logo=apple&logoColor=white)](https://dl.screenforge.studio/latest/ScreenForge.dmg)
 [![CI](https://github.com/mehfuzh/screenforge/actions/workflows/ci.yml/badge.svg)](https://github.com/mehfuzh/screenforge/actions/workflows/ci.yml)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20Apple%20silicon-000?logo=apple&logoColor=white)](https://github.com/mehfuzh/screenforge/releases/latest)
 [![Linux](https://img.shields.io/badge/Linux-x86__64%20X11%20%7C%20Wayland-fcc624?logo=linux&logoColor=black)](https://github.com/mehfuzh/screenforge/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-10%2B%20x86__64-0078d4?logo=windows&logoColor=white)](https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-windows-x86_64-setup.exe)
+[![Windows](https://img.shields.io/badge/Windows-10%2B%20x86__64-0078d4?logo=windows&logoColor=white)](https://dl.screenforge.studio/latest/ScreenForge-windows-x86_64-setup.exe)
 [![Status](https://img.shields.io/badge/Status-beta-ffe16b)](docs/STATUS.md)
 
 **Your AI screen editor. Just ask. It edits.**
@@ -65,21 +65,21 @@ ElevenLabs voices on ElevenLabs, both through the ScreenForge backend (see `site
 
 ## Download
 
-**[Download ScreenForge for macOS](https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge.dmg)**
+**[Download ScreenForge for macOS](https://dl.screenforge.studio/latest/ScreenForge.dmg)**
 (Apple silicon, macOS 14 or later; signed and notarized). Open the DMG, drag ScreenForge to
-Applications, and grant Screen Recording and Input Monitoring on first launch. All versions are on
-the [releases page](https://github.com/mehfuzh/screenforge/releases); the website is
+Applications, and grant Screen Recording and Input Monitoring on first launch. What changed in each
+version is in the [changelog](https://screenforge.studio/changelog/); the website is
 [screenforge.studio](https://screenforge.studio).
 
-**Linux (x86_64):** [.deb](https://github.com/mehfuzh/screenforge/releases/latest/download/screenforge_amd64.deb)
+**Linux (x86_64):** [.deb](https://dl.screenforge.studio/latest/screenforge_amd64.deb)
 (`sudo apt install ./screenforge_amd64.deb`) or a portable
-[.tar.gz](https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-linux-x86_64.tar.gz).
+[.tar.gz](https://dl.screenforge.studio/latest/ScreenForge-linux-x86_64.tar.gz).
 ffmpeg is included. Editing and exporting work everywhere; system audio and typing-caret zooms
 are macOS-only.
 
-**Windows (x86_64):** [installer](https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-windows-x86_64-setup.exe)
+**Windows (x86_64):** [installer](https://dl.screenforge.studio/latest/ScreenForge-windows-x86_64-setup.exe)
 (per-user, no admin rights; adds a Start menu entry and the `.screenforge` association) or a
-portable [.zip](https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-windows-x86_64.zip).
+portable [.zip](https://dl.screenforge.studio/latest/ScreenForge-windows-x86_64.zip).
 Windows 10 version 2004 or later; ffmpeg is included. Recording uses the Desktop Duplication API (GDI as a fallback) and records the
 cursor, clicks, keystrokes and system audio (WASAPI loopback) like the macOS build. The
 download is signed by Smartloop Inc. via Azure Trusted Signing; if SmartScreen still asks, choose "More info" → "Run anyway".

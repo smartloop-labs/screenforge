@@ -408,7 +408,7 @@ DOWNLOAD = [
      '<li><b>Paso 3</b><strong>Ábrela</strong>Abre ScreenForge desde el menú Inicio. <i class="hl">ffmpeg</i> viene incluido; no hay nada más que instalar.</li>'),
     ('<p style="margin-top:28px">On a Mac? <a href="#mac" data-os-link="mac">Get the macOS version</a>. On Linux? <a href="#linux" data-os-link="linux">Get the Linux version</a>.</p>',
      '<p style="margin-top:28px">¿Usas Mac? <a href="#mac" data-os-link="mac">Descarga la versión para macOS</a>. ¿Linux? <a href="#linux" data-os-link="linux">Descarga la versión para Linux</a>.</p>'),
-    ("m.textContent = 'latest release on GitHub';", "m.textContent = 'última versión en GitHub';"),
+    ("m.textContent = 'latest release';", "m.textContent = 'última versión';"),
     ("d.toLocaleDateString('en-GB',", "d.toLocaleDateString('es-ES',"),
 ]
 

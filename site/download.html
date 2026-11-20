@@ -529,7 +529,7 @@ gtag('config', 'G-ZYRJDJ736V');
   </div>
 
   <div class="cta">
-    <a class="go" id="dl" href="https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge.dmg" rel="noopener">
+    <a class="go" id="dl" href="https://dl.screenforge.studio/latest/ScreenForge.dmg" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
       Download .dmg
     </a>
@@ -559,11 +559,11 @@ gtag('config', 'G-ZYRJDJ736V');
   </div>
 
   <div class="cta">
-    <a class="go" id="dl-deb" href="https://github.com/mehfuzh/screenforge/releases/latest/download/screenforge_amd64.deb" rel="noopener">
+    <a class="go" id="dl-deb" href="https://dl.screenforge.studio/latest/screenforge_amd64.deb" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
       Download .deb
     </a>
-    <a class="alt" id="dl-tar" href="https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-linux-x86_64.tar.gz" rel="noopener">
+    <a class="alt" id="dl-tar" href="https://dl.screenforge.studio/latest/ScreenForge-linux-x86_64.tar.gz" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
       Download .tar.gz
     </a>
@@ -595,11 +595,11 @@ gtag('config', 'G-ZYRJDJ736V');
   </div>
 
   <div class="cta">
-    <a class="go" id="dl-win" href="https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-windows-x86_64-setup.exe" rel="noopener">
+    <a class="go" id="dl-win" href="https://dl.screenforge.studio/latest/ScreenForge-windows-x86_64-setup.exe" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
       Download installer
     </a>
-    <a class="alt" id="dl-win-zip" href="https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge-windows-x86_64.zip" rel="noopener">
+    <a class="alt" id="dl-win-zip" href="https://dl.screenforge.studio/latest/ScreenForge-windows-x86_64.zip" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
       Portable .zip
     </a>
@@ -704,10 +704,10 @@ gtag('config', 'G-ZYRJDJ736V');
 <script>
   (function () {
     var a = document.getElementById('dl'), m = document.getElementById('dl-meta'), sz = document.getElementById('dl-size');
-    var fallback = 'https://github.com/mehfuzh/screenforge/releases/latest/download/ScreenForge.dmg';
-    function fail() { a.href = fallback; m.textContent = 'latest release on GitHub'; }
+    var fallback = 'https://dl.screenforge.studio/latest/ScreenForge.dmg';
+    function fail() { a.href = fallback; m.textContent = 'latest release'; }
     if (!window.fetch) return fail();
-    fetch('https://api.github.com/repos/mehfuzh/screenforge/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+    fetch('https://dl.screenforge.studio/latest.json', { cache: 'no-cache' })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(function (rel) {
         var dmg = (rel.assets || []).filter(function (x) { return /\.dmg$/i.test(x.name || ''); })[0];

@@ -11,8 +11,9 @@ Writes into site/changelog/ (generated, not committed; site/_redirects sends the
 The pages reuse site/terms.html's head and navigation and the shared footer
 (scripts/site_partials.py), so they match the site. Run from
 anywhere; .github/workflows/site.yml runs it before every deploy, and the release workflow
-starts that deploy once a release is published. GH_TOKEN or GITHUB_TOKEN, when set, raises the
-GitHub API rate limit.
+starts that deploy once a release is published. GH_TOKEN or GITHUB_TOKEN is needed while the
+repository is private (and raises the API rate limit when it is public). The release notes come
+from GitHub; the download links point at dl.screenforge.studio.
 
   python3 scripts/gen-releases.py
 """
@@ -31,6 +32,11 @@ import site_partials  # noqa: E402  the shared footer
 
 REPO = os.environ.get("REPO", "mehfuzh/screenforge")
 SITE = "https://screenforge.studio"
+# where the files are served from (scripts/publish-dl.sh), whatever the repo's visibility
+DL = "https://dl.screenforge.studio"
+# dl.screenforge.studio keeps only the newest few versions (scripts/publish-dl.sh, DL_KEEP);
+# older changelog pages point at the download page instead of files that are gone
+DL_KEEP = int(os.environ.get("DL_KEEP", "3"))
 ROOT = Path(__file__).resolve().parent.parent
 SITE_DIR = ROOT / "site"
 OUT = SITE_DIR / "changelog"
@@ -151,17 +157,17 @@ def downloads(r):
     for label, pat in DOWNLOADS:
         a = next((a for a in r.get("assets", []) if pat.match(a["name"])), None)
         if a:
-            links.append(f'<a href="{html.escape(a["browser_download_url"])}" rel="nofollow">{label}</a>')
+            links.append(f'<a href="{DL}/{html.escape(r["tag_name"])}/{html.escape(a["name"])}" rel="nofollow">{label}</a>')
     return links
 
 
-def release_page(t, r, newer, older):
+def release_page(t, r, newer, older, hosted):
     v, d, items = version(r), date(r), changes(r["body"])
     url = f"{SITE}/changelog/v{v}/"
     title = f"ScreenForge {v} changelog"
     lis = "\n".join(f"    <li>{inline(i)}</li>" for i in items) or "    <li>Maintenance release: fixes and internal changes.</li>"
-    dl = downloads(r)
-    ld = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "ScreenForge", "softwareVersion": v, "datePublished": d.strftime("%Y-%m-%d"), "operatingSystem": "macOS, Windows, Linux", "applicationCategory": "MultimediaApplication", "url": url, "releaseNotes": url, "downloadUrl": r["html_url"]}
+    dl = downloads(r) if hosted else []
+    ld = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "ScreenForge", "softwareVersion": v, "datePublished": d.strftime("%Y-%m-%d"), "operatingSystem": "macOS, Windows, Linux", "applicationCategory": "MultimediaApplication", "url": url, "releaseNotes": url, "downloadUrl": f"{SITE}/download.html"}
     pager = '<nav class="pager" aria-label="Other releases">'
     pager += f'<a href="../v{version(older)}/">← {version(older)}</a>' if older else "<span></span>"
     pager += f'<a href="../v{version(newer)}/">{version(newer)} →</a>' if newer else "<span></span>"
@@ -177,7 +183,7 @@ def release_page(t, r, newer, older):
 
   <h2>Download</h2>
   {'<div class="dl">' + ''.join(dl) + '</div>' if dl else ''}
-  <p>Or get the newest version from the <a href="../../download.html">download page</a>. Every file and the full changelog are on <a href="{html.escape(r['html_url'])}">GitHub</a>.</p>
+  <p>Or get the newest version from the <a href="../../download.html">download page</a>.</p>
   {pager}"""
     extra = f'<script type="application/ld+json">{json.dumps(ld)}</script>\n<link rel="alternate" type="application/atom+xml" title="ScreenForge changelog" href="{SITE}/changelog/feed.xml">\n'
     return t.page(2, url, title, f"ScreenForge {v} ({long_date(d)}): " + summary(items, 120), body, extra)
@@ -264,7 +270,7 @@ def main():
         d.mkdir()
         newer = releases[i - 1] if i > 0 else None
         older = releases[i + 1] if i + 1 < len(releases) else None
-        (d / "index.html").write_text(release_page(t, r, newer, older), encoding="utf-8")
+        (d / "index.html").write_text(release_page(t, r, newer, older, i < DL_KEEP), encoding="utf-8")
     (OUT / "feed.xml").write_text(feed(releases), encoding="utf-8")
     (OUT / "sitemap.xml").write_text(sitemap(releases), encoding="utf-8")
     print(f"wrote {len(releases)} release pages, the digest, feed and sitemap to {OUT.relative_to(ROOT)}")
