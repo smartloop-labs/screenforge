@@ -37,9 +37,9 @@ const MAX_PHONEMES: usize = 400;
 /// Peak level of a finished take.
 pub(crate) const PEAK: f32 = 0.89;
 
-/// Our mirror (the `models-v1` release, next to the Whisper models), tried first; each file
+/// Our mirror (`models-v1` on dl.screenforge.studio, next to the Whisper models), tried first; each file
 /// is there as `kokoro-<file>` with `/` as `-`.
-const MIRROR: &str = "https://github.com/mehfuzh/screenforge/releases/download/models-v1";
+const MIRROR: &str = "https://dl.screenforge.studio/models-v1";
 const MODEL_REPO: &str = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231";
 const DICT_REPO: &str = "https://raw.githubusercontent.com/hexgrad/misaki/fba1236595f2d2bf21d414ba6e57d25256afada3/misaki/data";
 

@@ -22,8 +22,8 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 /// Environment variable overriding the models folder.
 pub const MODELS_ENV: &str = "SF_WHISPER_MODELS";
-/// Where models are downloaded from, in order: our own release, then whisper.cpp's upload.
-const MODEL_SOURCES: [&str; 2] = ["https://github.com/mehfuzh/screenforge/releases/download/models-v1", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"];
+/// Where models are downloaded from, in order: our own mirror (dl.screenforge.studio), then whisper.cpp's upload.
+const MODEL_SOURCES: [&str; 2] = ["https://dl.screenforge.studio/models-v1", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"];
 const SAMPLE_RATE: u32 = 16_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -419,7 +419,7 @@ mod tests {
     fn our_release_comes_first() {
         for m in Model::ALL {
             let urls = m.urls();
-            assert!(urls[0].starts_with("https://github.com/mehfuzh/screenforge/releases/download/models-v1/"), "{urls:?}");
+            assert!(urls[0].starts_with("https://dl.screenforge.studio/models-v1/"), "{urls:?}");
             assert!(urls[1].contains("huggingface.co"));
             assert_eq!(m.sha256().len(), 64);
         }

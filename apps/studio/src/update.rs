@@ -1,11 +1,12 @@
-//! Updates: the newest GitHub release compared with this build's version, downloaded and
-//! installed in place.
+//! Updates: the newest release compared with this build's version, downloaded and installed in
+//! place.
 //!
-//! The check is one HTTPS GET of the public releases API (no account, nothing about the user is
-//! sent). It runs on launch at most once a day while `Prefs::check_updates` is on, and whenever
+//! The check is one HTTPS GET of `dl.screenforge.studio/latest.json` (no account, nothing about
+//! the user is sent). The release workflow writes it (scripts/publish-dl.sh) in the shape of
+//! GitHub's releases/latest API, so it does not depend on where the source code is hosted. It runs on launch at most once a day while `Prefs::check_updates` is on, and whenever
 //! "Check for updates now" is pressed. When a newer release is out and this build knows how it
 //! was installed, the matching file is downloaded in the background, checked against the
-//! SHA-256 GitHub publishes for it (and on macOS against the running app's signing team), and
+//! SHA-256 published for it (and on macOS against the running app's signing team), and
 //! staged. "Restart to update" then quits; a small helper waits for the process to exit, puts the
 //! new build in place (or runs the installer) and opens it again.
 //!
@@ -18,8 +19,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-const LATEST_URL: &str = "https://api.github.com/repos/mehfuzh/screenforge/releases/latest";
-pub const RELEASES_URL: &str = "https://github.com/mehfuzh/screenforge/releases/latest";
+const LATEST_URL: &str = "https://dl.screenforge.studio/latest.json";
+pub const RELEASES_URL: &str = "https://screenforge.studio/download.html";
 /// Automatic checks run at most this often.
 pub const CHECK_EVERY_SECS: u64 = 24 * 60 * 60;
 const USER_AGENT: &str = concat!("ScreenForge/", env!("CARGO_PKG_VERSION"));
@@ -119,7 +120,7 @@ pub fn current() -> State {
     state().lock().map(|s| s.clone()).unwrap_or(State::Idle)
 }
 
-/// Ask GitHub for the newest release in the background, and fetch it when this build can
+/// Ask for the newest release in the background, and fetch it when this build can
 /// install it; `ctx` is repainted as it goes.
 pub fn check(ctx: &egui::Context) {
     {
@@ -204,12 +205,11 @@ struct Latest {
     asset: Option<Asset>,
 }
 
-/// The newest published release (drafts and pre-releases excluded by the API).
+/// The newest published release (latest.json only ever names a published one).
 fn fetch_latest(want: Option<&str>) -> Result<Latest, String> {
     let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(10)).build();
     let body = agent
         .get(LATEST_URL)
-        .set("Accept", "application/vnd.github+json")
         .set("User-Agent", USER_AGENT)
         .call()
         .map_err(|e| e.to_string())?
@@ -477,8 +477,8 @@ mod tests {
         assert!(due(Some(1000), 1000 + CHECK_EVERY_SECS));
     }
 
-    const RELEASE: &str = r#"{"tag_name":"v0.1.48","html_url":"https://github.com/mehfuzh/screenforge/releases/tag/v0.1.48","assets":[
-        {"name":"ScreenForge-macOS.zip","size":91889348,"digest":"sha256:DA85D7FDA1B128E4C4B06ACAC84BD7C9A24FA3A22CCB6A0E9BF4A7F5917DBCFD","browser_download_url":"https://github.com/mehfuzh/screenforge/releases/download/v0.1.48/ScreenForge-macOS.zip"},
+    const RELEASE: &str = r#"{"tag_name":"v0.1.48","html_url":"https://screenforge.studio/changelog/v0.1.48/","assets":[
+        {"name":"ScreenForge-macOS.zip","size":91889348,"digest":"sha256:DA85D7FDA1B128E4C4B06ACAC84BD7C9A24FA3A22CCB6A0E9BF4A7F5917DBCFD","browser_download_url":"https://dl.screenforge.studio/v0.1.48/ScreenForge-macOS.zip"},
         {"name":"screenforge_amd64.deb","size":10,"digest":null,"browser_download_url":"https://example.invalid/x.deb"}]}"#;
 
     #[test]
@@ -526,14 +526,14 @@ mod tests {
 
 #[cfg(test)]
 mod network {
-    /// Talks to GitHub: `cargo test -p studio -- --ignored latest_release`.
+    /// Talks to dl.screenforge.studio: `cargo test -p studio -- --ignored latest_release`.
     #[test]
     #[ignore]
     fn latest_release_has_a_version_tag_and_platform_files() {
         for name in ["ScreenForge-macOS.zip", "ScreenForge-linux-x86_64.tar.gz", "screenforge_amd64.deb", "ScreenForge-windows-x86_64-setup.exe"] {
             let r = super::fetch_latest(Some(name)).unwrap();
             assert!(super::parse(&r.tag).is_some(), "{}", r.tag);
-            assert!(r.page.starts_with("https://github.com/"), "{}", r.page);
+            assert!(r.page.starts_with("https://screenforge.studio/"), "{}", r.page);
             assert!(r.asset.is_some(), "{name} missing or without a digest");
         }
     }
