@@ -32,8 +32,7 @@ ScreenForge is made for tutorials, product demos, lessons, promos, talking-head 
 
 ## Links
 
-- Source code: https://github.com/smartloop-labs/screenforge
 - YouTube: https://www.youtube.com/channel/UC0dLM62U4eXzF0Qj1lUxkCg
 - X: https://x.com/ScreenForgeHQ
 - TikTok: https://www.tiktok.com/@screenforgehq
-- Support: https://github.com/smartloop-labs/screenforge/issues
+- Support: license@screenforge.studio

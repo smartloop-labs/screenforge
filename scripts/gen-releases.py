@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import site_partials  # noqa: E402  the shared footer
 
-REPO = os.environ.get("REPO", "mehfuzh/screenforge")
+REPO = os.environ.get("REPO", "smartloop-labs/screenforge")
 SITE = "https://screenforge.studio"
 # where the files are served from (scripts/publish-dl.sh), whatever the repo's visibility
 DL = "https://dl.screenforge.studio"
