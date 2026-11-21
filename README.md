@@ -1,7 +1,7 @@
 # ScreenForge
 
 [![Rust](https://img.shields.io/badge/Rust-100%25-dea584?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-3b82f6)](LICENSE)
+[![License: proprietary](https://img.shields.io/badge/License-proprietary-6b7280)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/mehfuzh/screenforge?sort=semver&label=Version&color=bd93f9)](https://github.com/mehfuzh/screenforge/releases/latest)
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20.dmg-bd93f9?logo=apple&logoColor=white)](https://dl.screenforge.studio/latest/ScreenForge.dmg)
 [![CI](https://github.com/mehfuzh/screenforge/actions/workflows/ci.yml/badge.svg)](https://github.com/mehfuzh/screenforge/actions/workflows/ci.yml)
@@ -12,7 +12,7 @@
 
 **Your AI screen editor. Just ask. It edits.**
 
-ScreenForge is an open source AI video editor and screen recorder for macOS, Windows and Linux,
+ScreenForge is an AI video editor and screen recorder for macOS, Windows and Linux,
 written in Rust. Record your screen, your camera or an iPhone, or drop in any MP4, MOV or M4V,
 then tell the agent what you want: "cut the ums and the long pauses", "zoom on my clicks",
 "get this under a minute", "add calm music and a mountain photo behind it". It edits the
@@ -99,7 +99,7 @@ are not recorded, so automatic zooms and cursor effects are not available there 
 If the dialog never appears or recording reports that no ScreenCast portal was found (common
 after switching between desktops), restart the portal: `systemctl --user restart xdg-desktop-portal`.
 
-**Pricing:** recording and editing are free and open source (Apache-2.0), and each computer gets
+**Pricing:** recording and editing are free, and each computer gets
 2 free exports; after that, exporting needs a license.
 
 - **Pro**, US$20/month: the AI agent with 1,000 credits a month (one credit is about US$0.01 of
@@ -174,7 +174,8 @@ Editor shortcuts: Space play/pause · ←/→ frame · ⇧←/→ second · S sp
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Proprietary, © Smartloop Inc. See `LICENSE`. Releases up to 0.1.64 were published under
+Apache-2.0 and stay under it.
 
 ## Releasing
 

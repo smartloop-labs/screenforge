@@ -1,4 +1,4 @@
-//! License keys gate video export. Recording and editing are free and open source; a key
+//! License keys gate video export. Recording and editing are free; a key
 //! (US$49 once, lifetime) is checked offline against the embedded Ed25519 public key.
 //!
 //! Key format: `SF1.<base64url payload>.<base64url signature>`, payload JSON:
