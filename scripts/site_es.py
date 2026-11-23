@@ -14,7 +14,7 @@ import site_partials  # the shared footer
 
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'site'
 PAGES = ['index.html', 'pricing.html', 'download.html', 'comparison.html']
-ENGLISH_ONLY = ['privacy.html', 'terms.html', 'success.html', '404.html']
+ENGLISH_ONLY = ['privacy.html', 'terms.html', 'contact.html', 'success.html', '404.html']
 ASSETS = ['favicon.ico', 'favicon.svg', 'icon.png', 'apple-touch-icon.png', 'demo-v7.mp4', 'demo-poster-v7.jpg']
 
 
