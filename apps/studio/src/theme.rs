@@ -314,6 +314,24 @@ pub fn install_fonts(ctx: &egui::Context) {
             fonts.families.entry(fam.clone()).or_default().push("symbols".to_owned());
         }
     }
+    // system fonts for the scripts egui's fonts lack (Hindi, Arabic, Chinese, Japanese,
+    // Korean, Thai), so narration scripts and the agent's replies in them are not boxes.
+    // egui does not shape text: Hindi and Arabic read right only where crate::shaped draws them
+    let mut seen: Vec<*const u8> = vec![];
+    for probe in ['न', 'م', '你', 'こ', '안', 'ไ', 'ক', 'த'] {
+        let Some((data, index)) = sf_render::text::system_font_for(probe) else { continue };
+        if seen.contains(&data.as_ptr()) && index == 0 {
+            continue;
+        }
+        seen.push(data.as_ptr());
+        let name = format!("script-{probe}");
+        let mut fd = egui::FontData::from_static(data);
+        fd.index = index;
+        fonts.font_data.insert(name.clone(), std::sync::Arc::new(fd));
+        for fam in &families {
+            fonts.families.entry(fam.clone()).or_default().push(name.clone());
+        }
+    }
     ctx.set_fonts(fonts);
 }
 

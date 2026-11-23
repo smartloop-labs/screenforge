@@ -1,7 +1,8 @@
 // "My voice": a Pro user's own voice, cloned by ElevenLabs (Instant Voice Clone) from recordings
 // they made, so Narration, the agent and Re-voice can speak in it ("my_voice" in `voice` and
 // `voice-enhance`). One clone per license email; the user must say it is their own voice.
-//   { device, action: "status" }                                → { voice: Clone | null }
+//   { device, action: "status" }                                → { voice: Clone | null, enabled, pro }
+//       enabled: new clones can be made (MY_VOICE_CLOUD=on); pro: this computer may make one
 //   { device, action: "create", consent: true, samples, clean } → { voice: Clone }
 //       samples: base64 WAVs (16-bit PCM mono), 10 s to 3 min in all; clean: take out
 //       background noise first. Making it again replaces the clone.
@@ -35,6 +36,10 @@ const voiceName = (name: unknown) => {
 
 // deno-lint-ignore no-explicit-any
 const clone = (row: any) => (row ? { name: row.name, seconds: Number(row.seconds), createdAt: row.created_at, parked: !row.voice_id } : null);
+
+/** New clones are made only with MY_VOICE_CLOUD=on: ElevenLabs can flag a clone for a
+ * verification only the account owner can do (such a clone is refused when it is made). */
+const cloudOn = () => Deno.env.get("MY_VOICE_CLOUD") === "on";
 
 /** Clones not read with for this long are put away (deleted at ElevenLabs, row kept). */
 const IDLE_DAYS = 30;
@@ -92,7 +97,8 @@ serve(async (req) => {
     // no gate: a computer without Pro simply has no voice to show
     const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", { auth: { persistSession: false } });
     const payer = await payerFor(db, device);
-    return json({ voice: payer.email ? clone(await current(db, payer.email.toLowerCase())) : null });
+    // enabled: new clones are made (MY_VOICE_CLOUD), so the app offers to make one
+    return json({ voice: payer.email ? clone(await current(db, payer.email.toLowerCase())) : null, enabled: cloudOn(), pro: payer.allowed && !!payer.email });
   }
 
   const gated = await gate(device);
@@ -120,9 +126,8 @@ serve(async (req) => {
   }
 
   if (action !== "create") return fail("action must be status, create, rename or delete", 400);
-  // ElevenLabs clones are switched off (flagged clones cannot be verified for app users); a
-  // voice made on the user's computer replaces them. Delete and status still work.
-  if (Deno.env.get("MY_VOICE_CLOUD") !== "on") return fail("My voice is not available right now. Pick another voice for your narration.", 503, { code: "my_voice_off" });
+  // off unless MY_VOICE_CLOUD=on (see cloudOn); status, rename and delete always work
+  if (!cloudOn()) return fail("My voice is not available right now. Pick another voice for your narration.", 503, { code: "my_voice_off" });
   if (consent !== true) return fail("Confirm that this is your own voice first.", 400);
   if (!Array.isArray(samples) || samples.length === 0 || samples.length > MAX_SAMPLES) return fail(`Send 1 to ${MAX_SAMPLES} recordings.`, 400);
   const form = new FormData();

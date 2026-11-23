@@ -10,17 +10,94 @@ export const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-
 export const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 export const fail = (error: string, status: number, extra: Record<string, unknown> = {}) => json({ error, ...extra }, status);
 
-/** The app's ids → ElevenLabs' premade voices; keep the ids in step with sf_tts::CLOUD_VOICES. */
-export const VOICES: Record<string, string> = {
-  el_brian: "nPczCjzI2devNBz1zQrb",
-  el_george: "JBFqnCBsd6RMkjVDRZzb",
-  el_eric: "cjVigY5qzO86Huf0OWal",
-  el_daniel: "onwK4e9ZLuTAKqWW03F9",
-  el_sarah: "EXAVITQu4vr4xnSDxMaL",
-  el_matilda: "XrExE9yKIg1WjnnlVkGX",
-  el_alice: "Xb7hH8MSUJpSbSDYk0k2",
-  el_jessica: "cgSgspJ2msm6clMCkdW9",
-};
+/** An ElevenLabs voice the app offers. `id` is the app's (`el_brian`), `elevenlabs` the voice
+ * at ElevenLabs (never sent to the app). `language` (ISO 639-1, or 639-3 where there is no
+ * 639-1 code) marks a native speaker of that language, offered only when the project's
+ * narration is in it; no language = offered for every language (v4 reads them all, in the
+ * language's own accent). */
+export type CatalogVoice = { id: string; elevenlabs: string; name: string; female: boolean; style: string; language?: string };
+
+/** The voices the app offers, in order (the first is the default). The app fetches this list
+ * (`voice` with action "list"), so voices are added here without an app release; its own copy
+ * (sf_tts::cloud::BUILT_IN) is the fallback until the first fetch and must keep these eight.
+ *
+ * Native narrators come from the Voice Library: pick them with backend/find-narrators.sh. Take
+ * only voices verified for the model (verified_languages), with a notice period of 30 days or
+ * more (an owner who stops sharing a voice takes it away after that) and no custom rate
+ * (fiat_rate), which would cost more than the credits charged. Library voices need no voice
+ * slot. Ids are `el_<language>_<name>` so they never clash with the eight. */
+export const CATALOG: CatalogVoice[] = [
+  { id: "el_eric", elevenlabs: "cjVigY5qzO86Huf0OWal", name: "Eric", female: false, style: "smooth, trustworthy" },
+  { id: "el_brian", elevenlabs: "nPczCjzI2devNBz1zQrb", name: "Brian", female: false, style: "deep, resonant narrator" },
+  { id: "el_george", elevenlabs: "JBFqnCBsd6RMkjVDRZzb", name: "George", female: false, style: "warm British storyteller" },
+  { id: "el_daniel", elevenlabs: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", female: false, style: "steady British broadcaster" },
+  { id: "el_sarah", elevenlabs: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", female: true, style: "mature, confident" },
+  { id: "el_matilda", elevenlabs: "XrExE9yKIg1WjnnlVkGX", name: "Matilda", female: true, style: "knowledgeable, professional" },
+  { id: "el_alice", elevenlabs: "Xb7hH8MSUJpSbSDYk0k2", name: "Alice", female: true, style: "clear British educator" },
+  { id: "el_jessica", elevenlabs: "cgSgspJ2msm6clMCkdW9", name: "Jessica", female: true, style: "playful, bright" },
+  // native narrators (Voice Library, verified for eleven_v4, 730-day notice, no custom rate);
+  // the first of a language is its default
+  { id: "el_hi_raghav", elevenlabs: "4BoDaQ6aygOP6fpsUmJe", name: "Raghav", female: false, style: "calm, confident explainer", language: "hi" },
+  { id: "el_hi_viraj", elevenlabs: "FmBhnvP58BK0vz65OOj7", name: "Viraj", female: false, style: "energetic, clear narrator", language: "hi" },
+  { id: "el_hi_monika", elevenlabs: "1qEiC6qsybMkmnNdVMbK", name: "Monika", female: true, style: "calm, natural", language: "hi" },
+  { id: "el_hi_kanika", elevenlabs: "H6QPv2pQZDcGqLwDTIJQ", name: "Kanika", female: true, style: "soft, smooth professional", language: "hi" },
+  { id: "el_es_alberto", elevenlabs: "l1zE9xgNpUTaQCZzpNJa", name: "Alberto", female: false, style: "serious Latin American narrator", language: "es" },
+  { id: "el_es_aaron", elevenlabs: "t9LRTh3y1ioN00e9wsNh", name: "Aarón", female: false, style: "clear, professional Castilian", language: "es" },
+  { id: "el_es_tatiana", elevenlabs: "2rigMbVWLdqtBSCahJFX", name: "Tatiana", female: true, style: "calm, neutral Latin American", language: "es" },
+  { id: "el_es_jhenny", elevenlabs: "2Lb1en5ujrODDIqmp7F3", name: "Jhenny", female: true, style: "soft, educational", language: "es" },
+  { id: "el_fr_nicolas", elevenlabs: "aQROLel5sQbj1vuIVi6B", name: "Nicolas", female: false, style: "Parisian narrator", language: "fr" },
+  { id: "el_fr_guillaume", elevenlabs: "Qrl71rx6Yg8RvyPYRGCQ", name: "Guillaume", female: false, style: "warm educational voice-over", language: "fr" },
+  { id: "el_fr_jeanne", elevenlabs: "txtf1EDouKke753vN8SL", name: "Jeanne", female: true, style: "young Parisian narrator", language: "fr" },
+  { id: "el_fr_victoria", elevenlabs: "O31r762Gb3WFygrEOGh0", name: "Victoria", female: true, style: "fluid content creator", language: "fr" },
+  { id: "el_de_johannes", elevenlabs: "r8MyP4qUsq5WFFSkPdfV", name: "Johannes", female: false, style: "clear, neutral narrator", language: "de" },
+  { id: "el_de_otto", elevenlabs: "FTNCalFNG5bRnkkaP5Ug", name: "Otto", female: false, style: "calm, casual", language: "de" },
+  { id: "el_de_leonie", elevenlabs: "uvysWDLbKpA4XvpD3GI6", name: "Leonie", female: true, style: "clear, engaging", language: "de" },
+  { id: "el_de_annika", elevenlabs: "ViKqgJNeCiWZlYgHiAOO", name: "Annika", female: true, style: "calm, confident", language: "de" },
+  { id: "el_it_marco", elevenlabs: "W71zT1VwIFFx3mMGH2uZ", name: "Marco", female: false, style: "warm, polished narrator", language: "it" },
+  { id: "el_it_thomas", elevenlabs: "CITWdMEsnRduEUkNWXQv", name: "Thomas", female: false, style: "energetic documentary voice", language: "it" },
+  { id: "el_it_violetta", elevenlabs: "gfKKsLN1k0oYYN9n2dXX", name: "Violetta", female: true, style: "bright, natural", language: "it" },
+  { id: "el_it_manuela", elevenlabs: "oVJbgLwL0s5pk9e2U6QH", name: "Manuela", female: true, style: "warm, versatile narrator", language: "it" },
+  { id: "el_pt_sandro", elevenlabs: "qPfM2laM0pRL4rrZtBGl", name: "Sandro", female: false, style: "clear Brazilian narrator", language: "pt" },
+  { id: "el_pt_matheus", elevenlabs: "oArP4WehPe3qjqvCwHNo", name: "Matheus", female: false, style: "calm, confident Brazilian", language: "pt" },
+  { id: "el_pt_amanda", elevenlabs: "oi8rgjIfLgJRsQ6rbZh3", name: "Amanda", female: true, style: "warm, neutral Brazilian", language: "pt" },
+  { id: "el_pt_ana", elevenlabs: "MZxV5lN3cv7hi1376O0m", name: "Ana", female: true, style: "smooth, engaging Brazilian", language: "pt" },
+  { id: "el_nl_ido", elevenlabs: "dLPO5AsXc3FZDbTh1IKa", name: "Ido", female: false, style: "friendly e-learning narrator", language: "nl" },
+  { id: "el_nl_arjen", elevenlabs: "62klqbsYqbynbr66ypRt", name: "Arjen", female: false, style: "calm, trustworthy", language: "nl" },
+  { id: "el_nl_petra", elevenlabs: "ANHrhmaFeVN0QJaa0PhL", name: "Petra", female: true, style: "energetic Flemish", language: "nl" },
+  { id: "el_pl_pawel", elevenlabs: "zzBTsLBFM6AOJtkr1e9b", name: "Paweł", female: false, style: "clear, optimistic narrator", language: "pl" },
+  { id: "el_pl_adam", elevenlabs: "B9cNwbQXN3s6l3nU6fqz", name: "Adam", female: false, style: "neutral, youthful narrator", language: "pl" },
+  { id: "el_pl_joanna", elevenlabs: "H3IcxEgdFxIEJAqMc0Bc", name: "Joanna", female: true, style: "clear, welcoming narrator", language: "pl" },
+  { id: "el_pl_magdalena", elevenlabs: "fEfGdiGJK4l3imI70mtC", name: "Magdalena", female: true, style: "warm, lively", language: "pl" },
+  { id: "el_tr_aliburak", elevenlabs: "5ANiIbDLbNMQ65tBPPDe", name: "Ali Burak", female: false, style: "calm, explanatory", language: "tr" },
+  { id: "el_tr_ahmet", elevenlabs: "ZsYcqahfiS2dy4J6XYC5", name: "Ahmet", female: false, style: "steady, confident", language: "tr" },
+  { id: "el_tr_derya", elevenlabs: "NNn9dv8zq2kUo7d3JSGG", name: "Derya", female: true, style: "dynamic, friendly narrator", language: "tr" },
+  { id: "el_tr_deniz", elevenlabs: "KAGDtM2gzDrjWlUp2KNe", name: "Deniz", female: true, style: "soft, friendly narrator", language: "tr" },
+  { id: "el_ar_anas", elevenlabs: "R6nda3uM038xEEKi7GFl", name: "Anas", female: false, style: "calm Modern Standard", language: "ar" },
+  { id: "el_ar_ali", elevenlabs: "MI88rOZjXbH22N8KHXUo", name: "Ali", female: false, style: "calm Saudi narrator", language: "ar" },
+  { id: "el_ar_ghizlane", elevenlabs: "u0TsaWvt0v8migutHM3M", name: "Ghizlane", female: true, style: "smooth Modern Standard", language: "ar" },
+  { id: "el_ar_sana", elevenlabs: "mRdG9GYEjJmIzqbYTidv", name: "Sana", female: true, style: "calm, soft Modern Standard", language: "ar" },
+  { id: "el_ja_konoha", elevenlabs: "T7yYq3WpB94yAuOXraRi", name: "Konoha", female: true, style: "professional explainer", language: "ja" },
+  { id: "el_ja_otani", elevenlabs: "3JDquces8E8bkmvbh6Bc", name: "Otani", female: false, style: "clear, measured narrator", language: "ja" },
+  { id: "el_ja_toshi", elevenlabs: "TzUI53GPXnGDRdeLAWZ4", name: "Toshi", female: false, style: "calm narrator", language: "ja" },
+  { id: "el_ja_harune", elevenlabs: "c2XJrw7TvNGtOc6r0ijG", name: "Harune", female: true, style: "calm, neutral narration", language: "ja" },
+  { id: "el_ko_hyunbin", elevenlabs: "s07IwTCOrCDCaETjUVjx", name: "Hyunbin", female: false, style: "clear corporate narrator", language: "ko" },
+  { id: "el_ko_gale", elevenlabs: "K3qo7ugXmpT87FDhLBbN", name: "Gale", female: false, style: "educational videos", language: "ko" },
+  { id: "el_ko_jiyoung", elevenlabs: "AW5wrnG1jVizOYY7R1Oo", name: "Jiyoung", female: true, style: "warm, clear", language: "ko" },
+  { id: "el_ko_annakim", elevenlabs: "uyVNoMrnUku1dZyVEXwD", name: "Anna Kim", female: true, style: "calm, clear narrator", language: "ko" },
+  { id: "el_zh_adrian", elevenlabs: "agczkAUlHLowaNnL72Cc", name: "Adrian", female: false, style: "modern Mandarin narration", language: "zh" },
+  { id: "el_zh_evan", elevenlabs: "MI36FIkp9wRP7cpWKPTl", name: "Evan", female: false, style: "warm, trustworthy Mandarin", language: "zh" },
+  { id: "el_zh_annasu", elevenlabs: "r6qgCCGI7RWKXCagm158", name: "Anna Su", female: true, style: "clear Taiwanese Mandarin", language: "zh" },
+  { id: "el_zh_susan", elevenlabs: "kAIqZ7fZv234ClKXwzDx", name: "Susan", female: true, style: "clear, calm storyteller", language: "zh" },
+];
+
+/** The app's ids → ElevenLabs' voices. */
+export const VOICES: Record<string, string> = Object.fromEntries(CATALOG.map((v) => [v.id, v.elevenlabs]));
+
+/** The catalog as the app sees it (without ElevenLabs' ids). */
+export const publicCatalog = () => CATALOG.map(({ elevenlabs: _, ...v }) => v);
+
+/** A language code ElevenLabs' `language_code` takes (ISO 639-1, or 639-3). */
+export const isLanguage = (code: unknown): code is string => typeof code === "string" && /^[a-z]{2,3}$/.test(code);
 
 /** The app's id for the user's own voice ("My voice"), resolved per license by [`voiceIdFor`]. */
 export const MY_VOICE = "my_voice";

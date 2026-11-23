@@ -89,6 +89,11 @@ pub fn call_backend_status(name: &str, body: serde_json::Value) -> Result<serde_
     request(name, body)
 }
 
+/// [`call_backend_status`] for a function that takes long to answer.
+pub fn call_backend_status_within(name: &str, body: serde_json::Value, secs: u64) -> Result<serde_json::Value, (u16, String)> {
+    request_within(name, body, secs)
+}
+
 /// Check in with the backend for the key saved on this computer, without emailing anything:
 /// a renewed key is saved, and when the license was moved to another computer the saved key is
 /// removed (`Ok(Some(false))`). `Ok(None)`: no key or no email saved, nothing to check. A

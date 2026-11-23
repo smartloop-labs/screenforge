@@ -52,10 +52,11 @@ pub trait Host: Send + Sync {
         let _ = path;
         Err("adding images and videos over the recording is not available here".into())
     }
-    /// Read `text` aloud with AI voice `voice` (a [`VOICES`] id) at `speed`, saved in the
-    /// project's voice-over folder with its words for captions.
-    fn speak(&self, text: &str, voice: &str, speed: f64) -> Result<Spoken, String> {
-        let _ = (text, voice, speed);
+    /// Read `text` aloud with AI voice `voice` (a [`VOICES`] id, or one of the options'
+    /// `cloudVoices`) at `speed`, in `language` (an ISO 639-1 code for ElevenLabs; `None`:
+    /// English), saved in the project's voice-over folder with its words for captions.
+    fn speak(&self, text: &str, voice: &str, speed: f64, language: Option<&str>) -> Result<Spoken, String> {
+        let _ = (text, voice, speed, language);
         Err("AI voices are not available here".into())
     }
 }

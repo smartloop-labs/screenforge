@@ -38,8 +38,21 @@ pub struct CaptionLine {
 
 impl CaptionLine {
     pub fn text(&self) -> String {
-        self.words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ")
+        join_words(self.words.iter().map(|w| w.text.as_str()))
     }
+}
+
+/// Words joined into a line: with spaces, except between Chinese and Japanese characters.
+pub fn join_words<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
+    let cjk = |c: char| matches!(c as u32, 0x3000..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFF60);
+    let mut out = String::new();
+    for w in words {
+        if !out.is_empty() && !(out.chars().last().is_some_and(cjk) && w.chars().next().is_some_and(cjk)) {
+            out.push(' ');
+        }
+        out.push_str(w);
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,7 +140,8 @@ pub fn words_from_transcript(items: &[TranscriptItem], offset_ms: f64, sound_lab
 }
 
 fn ends_sentence(text: &str) -> bool {
-    text.ends_with(['.', '?', '!'])
+    // with Chinese and Japanese full stops, the Hindi danda and the Arabic question mark
+    text.ends_with(['.', '?', '!', '。', '？', '！', '।', '؟'])
 }
 
 /// Group words into caption lines: a line ends at a sentence end, a long pause or the
@@ -142,6 +156,11 @@ pub fn build_short_lines(words: &[Word]) -> Vec<CaptionLine> {
 }
 
 fn build_lines_with(words: &[Word], max_chars: usize, max_words: usize) -> Vec<CaptionLine> {
+    // a Chinese or Japanese word is one character, about two Latin ones wide: count words by
+    // width, so a line of them is about as long as a line of English
+    let cjk = |w: &Word| w.text.chars().next().is_some_and(|c| matches!(c as u32, 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF));
+    let all_cjk = !words.is_empty() && words.iter().filter(|w| cjk(w)).count() * 2 > words.len();
+    let (max_chars, max_words) = if all_cjk { (max_chars / 2 + 2, max_chars / 2 + 2) } else { (max_chars, max_words) };
     let mut lines: Vec<CaptionLine> = vec![];
     let mut cur: Vec<Word> = vec![];
     let mut chars = 0usize;
@@ -250,7 +269,7 @@ fn cues<'a>(lines: &'a [CaptionLine], timeline: &Timeline) -> Vec<(f64, f64, Vec
 pub fn to_srt(lines: &[CaptionLine], timeline: &Timeline) -> String {
     let mut out = String::new();
     for (n, (start, end, words)) in cues(lines, timeline).iter().enumerate() {
-        out.push_str(&format!("{}\n{} --> {}\n{}\n\n", n + 1, srt_time(*start), srt_time(*end), words.join(" ")));
+        out.push_str(&format!("{}\n{} --> {}\n{}\n\n", n + 1, srt_time(*start), srt_time(*end), join_words(words.iter().map(|w| w.as_ref()))));
     }
     out
 }
@@ -260,7 +279,7 @@ pub fn to_vtt(lines: &[CaptionLine], timeline: &Timeline) -> String {
     let mut out = String::from("WEBVTT\n\n");
     for (start, end, words) in cues(lines, timeline) {
         // VTT separates the milliseconds with a dot
-        out.push_str(&format!("{} --> {}\n{}\n\n", srt_time(start).replace(',', "."), srt_time(end).replace(',', "."), words.join(" ")));
+        out.push_str(&format!("{} --> {}\n{}\n\n", srt_time(start).replace(',', "."), srt_time(end).replace(',', "."), join_words(words.iter().map(|w| w.as_ref()))));
     }
     out
 }

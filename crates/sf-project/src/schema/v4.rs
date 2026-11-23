@@ -234,6 +234,11 @@ pub struct AudioConfig {
     /// ScreenForge extension: how fast the AI voice reads (0.7..1.3). `None` = 1.
     #[serde(default, rename = "sfNarrationSpeed", skip_serializing_if = "Option::is_none")]
     pub narration_speed: Option<f64>,
+    /// ScreenForge extension: the language ElevenLabs narration is in (ISO 639-1, "es"), which
+    /// decides the voices offered and is passed to ElevenLabs. `None` = English. The voices on
+    /// this computer read English whatever it is.
+    #[serde(default, rename = "sfNarrationLanguage", skip_serializing_if = "Option::is_none")]
+    pub narration_language: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -245,6 +250,12 @@ impl AudioConfig {
     /// Narration speed, 1 when unset.
     pub fn narration_speed(&self) -> f64 {
         self.narration_speed.filter(|s| s.is_finite()).unwrap_or(1.0).clamp(*Self::NARRATION_SPEEDS.start(), *Self::NARRATION_SPEEDS.end())
+    }
+
+    /// The narration's language code: `narration_language` when it is one ("es"), else `None`
+    /// (English, which ElevenLabs is not told).
+    pub fn narration_language(&self) -> Option<&str> {
+        self.narration_language.as_deref().map(str::trim).filter(|l| l.len() >= 2 && l.len() <= 3 && l.bytes().all(|b| b.is_ascii_lowercase()) && *l != "en")
     }
 
     /// Microphone boost in dB, 0 when unset.
@@ -269,6 +280,7 @@ impl Default for AudioConfig {
             microphone_boost_db: None,
             narration_voice: None,
             narration_speed: None,
+            narration_language: None,
             extra: Extra::new(),
         }
     }

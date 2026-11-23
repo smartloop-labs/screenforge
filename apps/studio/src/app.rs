@@ -136,6 +136,9 @@ impl App {
         crate::theme::install_fonts(&cc.egui_ctx);
         crate::theme::apply(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
+        // the ElevenLabs voices the backend offers, for the Narration panel and the agent
+        crate::narration::load_cloud_voices();
+        crate::my_voice::load_studio();
         let rs = cc.wgpu_render_state.as_ref().expect("wgpu renderer required");
         let gpu = Gpu::from_parts(Arc::new(rs.device.clone()), Arc::new(rs.queue.clone()));
         let mut prefs = Prefs::load();

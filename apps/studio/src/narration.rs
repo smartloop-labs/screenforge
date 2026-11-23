@@ -13,8 +13,50 @@ use sf_project::transcript::{Generator, TranscriptFile, TranscriptItem};
 use sf_tts::clone::is_my_voice;
 use sf_tts::Progress;
 
-/// What the preview says.
-const PREVIEW: &str = "Hi! This is how I sound reading your video's narration.";
+/// What the preview says (in English; an ElevenLabs voice says it in the narration's
+/// language, [`sf_tts::cloud::Language::preview`]).
+const PREVIEW: &str = sf_tts::cloud::LANGUAGES[0].preview;
+
+/// Load the ElevenLabs voices the backend offers (native speakers of other languages beside
+/// the built-in ones): at start the copy kept from the last run, then the backend's list in the
+/// background. Until then, and offline, the voices built in are offered.
+pub fn load_cloud_voices() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if let Some(kept) = catalog_file().and_then(|f| std::fs::read(f).ok()).and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) {
+            sf_tts::cloud::set_catalog(&kept);
+        }
+        refresh_cloud_voices();
+    });
+}
+
+fn catalog_file() -> Option<PathBuf> {
+    previews_dir().map(|d| d.with_file_name("voice-catalog.json"))
+}
+
+/// Fetch the backend's voice list again (when the narration language changes, so voices added
+/// since the app started show), at most once a minute.
+pub fn refresh_cloud_voices() {
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    {
+        let Ok(mut last) = LAST.lock() else { return };
+        if last.is_some_and(|t| t.elapsed().as_secs() < 60) {
+            return;
+        }
+        *last = Some(std::time::Instant::now());
+    }
+    let file = catalog_file();
+    std::thread::spawn(move || match sf_license::call_backend("voice", serde_json::json!({ "action": "list" })) {
+        Ok(reply) if sf_tts::cloud::set_catalog(&reply) => {
+            if let Some(f) = file {
+                let _ = f.parent().map(std::fs::create_dir_all);
+                let _ = std::fs::write(f, reply.to_string());
+            }
+        }
+        Ok(_) => tracing::warn!("the backend's voice list lacks the core voices; keeping the current list"),
+        Err(e) => tracing::info!("voice list not loaded: {e}"),
+    });
+}
 
 /// The balance the last ElevenLabs reading left (the backend's `credits` summary), for the agent
 /// panel's credits chip; taken by [`take_credits`].
@@ -67,6 +109,8 @@ pub struct TakeRequest {
     pub text: String,
     pub voice: String,
     pub speed: f64,
+    /// The narration's language for an ElevenLabs voice (`None`: English).
+    pub language: Option<String>,
     pub replaces: Option<String>,
     pub source_ms: f64,
 }
@@ -181,12 +225,14 @@ impl NarrationJob {
 
     /// Say a line with `voice` (downloading the model first if needed; an ElevenLabs voice's
     /// preview is kept, so hearing it again costs nothing).
-    pub fn preview(&mut self, voice: &str, speed: f64) {
+    /// `language` is the narration's, which an ElevenLabs voice says the preview in.
+    pub fn preview(&mut self, voice: &str, speed: f64, language: Option<&str>) {
         self.player = None;
         let voice = voice.to_string();
+        let language = language.map(str::to_string);
         self.start(Work::Preview, move |cancel, progress| {
             if sf_tts::cloud::cloud_voice(&voice).is_some() {
-                return cloud_preview(&voice, speed).map(Finished::Preview);
+                return cloud_preview(&voice, speed, language.as_deref()).map(Finished::Preview);
             }
             if is_my_voice(&voice) {
                 return my_voice_preview(&voice, cancel, progress).map(Finished::Preview);
@@ -217,7 +263,7 @@ impl NarrationJob {
                 if cancel.load(Ordering::Relaxed) {
                     return Err("cancelled".into());
                 }
-                let spoken = speak_into(&project, &t.text, &t.voice, t.speed)?;
+                let spoken = speak_into(&project, &t.text, &t.voice, t.speed, t.language.as_deref())?;
                 made.push(Made { file_name: spoken.file_name, duration_ms: spoken.duration_ms, text: t.text, voice: t.voice, replaces: t.replaces, source_ms: t.source_ms });
             }
             Ok(Finished::Takes(made))
@@ -301,10 +347,16 @@ pub fn place(project: &mut sf_project::Project, made: Vec<Made>) -> Vec<String> 
 }
 
 /// Read `text` with `voice` into `project`'s voice-over folder, with its words saved as the
-/// take's transcript (they are the captions; the take is never transcribed).
-pub fn speak_into(project: &Path, text: &str, voice: &str, speed: f64) -> Result<sf_agent::host::Spoken, String> {
-    let (speech, kind) = if sf_tts::cloud::cloud_voice(voice).is_some() {
-        (cloud_speak(text, voice, speed)?, "elevenlabs")
+/// take's transcript (they are the captions; the take is never transcribed). `language` is
+/// the narration's for an ElevenLabs voice (`None`: English); the voices on this computer read
+/// English.
+pub fn speak_into(project: &Path, text: &str, voice: &str, speed: f64, language: Option<&str>) -> Result<sf_agent::host::Spoken, String> {
+    let cloud = sf_tts::cloud::cloud_voice(voice);
+    let online = cloud.is_some();
+    // a native narrator reads its own language
+    let language = cloud.and_then(|c| c.language).or(language.filter(|_| online));
+    let (speech, kind) = if online {
+        (cloud_speak(text, voice, speed, language)?, "elevenlabs")
     } else if is_my_voice(voice) {
         (my_voice_speak(voice, text, &AtomicBool::new(false), |_| {})?, "chatterbox")
     } else {
@@ -318,16 +370,25 @@ pub fn speak_into(project: &Path, text: &str, voice: &str, speed: f64) -> Result
     let name = format!("narration-{}.wav", chrono::Local::now().format("%Y%m%d-%H%M%S-%3f"));
     speech.write_wav(&dir.join(&name)).map_err(|e| format!("{e:#}"))?;
     let items = speech.words.iter().enumerate().map(|(i, w)| TranscriptItem::new(i as u32, w.start_ms, w.end_ms, w.text.clone())).collect();
-    let generator = Generator { kind: kind.into(), model: Some(voice.into()), language: Some("en".into()), prompt: None, extra: Default::default() };
+    let generator = Generator { kind: kind.into(), model: Some(voice.into()), language: Some(language.unwrap_or("en").into()), prompt: None, extra: Default::default() };
     TranscriptFile::voice_over(&name, generator, items).save(project).map_err(|e| e.to_string())?;
     Ok(sf_agent::host::Spoken { file_name: name, duration_ms: speech.duration_ms() })
 }
 
-/// Read `text` with ElevenLabs voice `voice` through the backend (which charges the credits).
-fn cloud_speak(text: &str, voice: &str, speed: f64) -> Result<sf_tts::Speech, String> {
+/// Read `text` with ElevenLabs voice `voice` through the backend (which charges the credits),
+/// in `language` (`None`: ElevenLabs tells from the text).
+fn cloud_speak(text: &str, voice: &str, speed: f64, language: Option<&str>) -> Result<sf_tts::Speech, String> {
     let device = sf_license::device_id().ok_or("ElevenLabs voices need this computer's id, which could not be read")?;
-    let body = serde_json::json!({ "device": device, "voice": voice, "text": text, "speed": speed });
-    let reply = sf_license::call_backend_within("voice", body, 180)?;
+    let mut body = serde_json::json!({ "device": device, "voice": sf_tts::cloud::backend_voice(voice), "text": text, "speed": speed });
+    if let Some(l) = language {
+        body["language"] = l.into();
+    }
+    let reply = if voice == sf_tts::cloud::STUDIO {
+        // put away by the backend after a while unused: made again, then read
+        crate::my_voice::with_studio(|| sf_license::call_backend_status_within("voice", body.clone(), 180))?
+    } else {
+        sf_license::call_backend_within("voice", body, 180)?
+    };
     note_credits(&reply);
     use base64::Engine;
     let pcm = base64::engine::general_purpose::STANDARD.decode(reply["audio"].as_str().ok_or("ElevenLabs returned no audio")?).map_err(|e| e.to_string())?;
@@ -408,13 +469,20 @@ pub fn forget_previews(voice: &str) {
     }
 }
 
-/// The preview of ElevenLabs voice `voice` at `speed`, read once and kept in the cache folder.
-fn cloud_preview(voice: &str, speed: f64) -> Result<sf_tts::Speech, String> {
-    let file = previews_dir().map(|d| d.join(format!("{voice}-{:.0}.pcm", speed * 100.0)));
+/// The preview of ElevenLabs voice `voice` at `speed` in `language` (`None`: English), read
+/// once and kept in the cache folder.
+fn cloud_preview(voice: &str, speed: f64, language: Option<&str>) -> Result<sf_tts::Speech, String> {
+    let lang = language.and_then(sf_tts::cloud::language).filter(|l| l.code != "en");
+    // English previews keep the name they had before narration had a language
+    let name = match lang {
+        Some(l) => format!("{voice}-{}-{:.0}.pcm", l.code, speed * 100.0),
+        None => format!("{voice}-{:.0}.pcm", speed * 100.0),
+    };
+    let file = previews_dir().map(|d| d.join(name));
     if let Some(pcm) = file.as_ref().and_then(|f| std::fs::read(f).ok()) {
         return sf_tts::cloud::speech_from_pcm(&pcm, &Default::default()).map_err(|e| format!("{e:#}"));
     }
-    let speech = cloud_speak(PREVIEW, voice, speed)?;
+    let speech = cloud_speak(lang.map_or(PREVIEW, |l| l.preview), voice, speed, lang.map(|l| l.code))?;
     if let Some(f) = file {
         let pcm: Vec<u8> = speech.samples.iter().flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes()).collect();
         let _ = f.parent().map(std::fs::create_dir_all);

@@ -1161,7 +1161,7 @@ fn enhance_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str, take_ms: f64) {
     let mode_id = ui.id().with(("enhance_mode", id));
     let (mut revoice, mut voice): (bool, String) = ui.data(|d| d.get_temp(mode_id)).unwrap_or_else(|| match enhanced.as_deref().and_then(sf_tts::cloud::cloud_voice) {
         Some(c) => (true, c.id.to_string()),
-        None => (false, sf_tts::cloud::CLOUD_VOICES[0].id.to_string()),
+        None => (false, sf_tts::cloud::cloud_voices()[0].id.to_string()),
     });
     ui.add_enabled_ui(!busy && !locked, |ui| {
         if let Some(i) = widgets::segmented(ui, revoice as usize, &["Clean up", "Re-voice"]) {
@@ -1169,13 +1169,16 @@ fn enhance_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str, take_ms: f64) {
         }
         if revoice {
             for female in [false, true] {
-                let row: Vec<_> = sf_tts::cloud::CLOUD_VOICES.iter().filter(|v| v.female == female).collect();
+                let row: Vec<_> = sf_tts::cloud::cloud_voices().iter().filter(|v| v.female == female).collect();
                 let names: Vec<&str> = row.iter().map(|v| v.name).collect();
                 ui.add_space(4.0);
                 ui.label(RichText::new(if female { "Female" } else { "Male" }).size(13.0).color(pal.text_dim));
                 if let Some(i) = widgets::pills(ui, row.iter().position(|v| v.id == voice).unwrap_or(usize::MAX), &names) {
                     voice = row[i].id.to_string();
                 }
+            }
+            if let Some(v) = sf_tts::cloud::studio().and_then(|s| studio_row(ui, s, &voice)) {
+                voice = v;
             }
         }
     });
@@ -1222,9 +1225,10 @@ fn spoken_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str) {
     widgets::title(ui, "AI voice");
     let busy = ed.narration.working().is_some();
     let speed = ed.session.pkg.project.config.audio.narration_speed();
+    let language = ed.session.pkg.project.config.audio.narration_language().map(str::to_string);
     let mut read = None;
     ui.add_enabled_ui(!busy, |ui| {
-        if let Some(v) = voice_picker(ui, id, &voice, false, true) {
+        if let Some(v) = voice_picker(ui, id, &voice, false, true, language.as_deref()) {
             read = Some((v.to_string(), text.clone()));
         }
     });
@@ -1245,7 +1249,7 @@ fn spoken_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str) {
         });
     }
     if let Some((voice, text)) = read {
-        let req = crate::narration::TakeRequest { text, voice, speed, replaces: Some(id.to_string()), source_ms };
+        let req = crate::narration::TakeRequest { text, voice, speed, language, replaces: Some(id.to_string()), source_ms };
         ed.narration.read(ed.path.clone(), vec![req]);
     }
     // a download it waits for shows under Narration → Voice model
@@ -1277,6 +1281,21 @@ fn narration_status(ed: &mut Editor, ui: &mut egui::Ui) {
     }
 }
 
+/// The narration's language for ElevenLabs (`current` `None`: English). The code picked.
+fn language_combo(ui: &mut egui::Ui, current: Option<&str>) -> Option<&'static str> {
+    let current = current.unwrap_or("en");
+    let shown = sf_tts::cloud::language(current).map_or(current, |l| l.name);
+    let mut picked = None;
+    egui::ComboBox::from_id_salt("narration_language").selected_text(shown).width(ui.available_width() - 8.0).show_ui(ui, |ui| {
+        for l in &sf_tts::cloud::LANGUAGES {
+            if widgets::menu_item(ui, l.code == current, l.name).clicked() && l.code != current {
+                picked = Some(l.code);
+            }
+        }
+    });
+    picked
+}
+
 /// Why the ElevenLabs voices cannot be chosen.
 const CLOUD_LOCKED_TIP: &str = "Upgrade to Pro for ElevenLabs' studio-quality voices";
 
@@ -1286,7 +1305,9 @@ const CLOUD_LOCKED_TIP: &str = "Upgrade to Pro for ElevenLabs' studio-quality vo
 /// reads it again) it only shows the other engine's voices until one is picked. Without Pro,
 /// ElevenLabs is greyed out and the voices on this computer are shown. `own_voices` adds the
 /// user's own voices on this computer (the panel shows them itself, with Add a voice).
-fn voice_picker(ui: &mut egui::Ui, id_salt: &str, current: &str, pick_on_switch: bool, own_voices: bool) -> Option<String> {
+/// ElevenLabs' voices are those for narration in `language` (`None`: English): its native
+/// speakers first, then the voices for every language.
+fn voice_picker(ui: &mut egui::Ui, id_salt: &str, current: &str, pick_on_switch: bool, own_voices: bool, language: Option<&str>) -> Option<String> {
     let id = ui.id().with(("voice_engine", id_salt));
     let locked = crate::narration::cloud_locked();
     let current_online = sf_tts::cloud::cloud_voice(current).is_some();
@@ -1297,10 +1318,10 @@ fn voice_picker(ui: &mut egui::Ui, id_salt: &str, current: &str, pick_on_switch:
     if let Some(i) = widgets::segmented_with_tip(ui, online as usize, &["On this computer", "ElevenLabs"], disabled, CLOUD_LOCKED_TIP) {
         let online = i == 1;
         ui.data_mut(|d| d.insert_temp(id, (current.to_string(), online)));
-        return pick_on_switch.then(|| if online { sf_tts::cloud::CLOUD_VOICES[0].id } else { sf_tts::DEFAULT_VOICE }.to_string());
+        return pick_on_switch.then(|| if online { sf_tts::cloud::default_voice(language).id } else { sf_tts::DEFAULT_VOICE }.to_string());
     }
     let voices: Vec<(&'static str, &'static str, bool)> = if online {
-        sf_tts::cloud::CLOUD_VOICES.iter().map(|v| (v.id, v.name, v.female)).collect()
+        sf_tts::cloud::voices_for(language).iter().map(|v| (v.id, v.name, v.female)).collect()
     } else {
         sf_tts::VOICES.iter().map(|v| (v.id, v.name, v.female)).collect()
     };
@@ -1320,7 +1341,20 @@ fn voice_picker(ui: &mut egui::Ui, id_salt: &str, current: &str, pick_on_switch:
             picked = Some(v);
         }
     }
+    // the user's own voice cloned by ElevenLabs
+    if let Some(studio) = sf_tts::cloud::studio().filter(|_| online) {
+        if let Some(v) = studio_row(ui, studio, current) {
+            picked = Some(v);
+        }
+    }
     picked
+}
+
+/// "Yours" under the ElevenLabs voices: the user's studio voice. The voice id when picked.
+fn studio_row(ui: &mut egui::Ui, studio: &sf_tts::cloud::CloudVoice, current: &str) -> Option<String> {
+    ui.add_space(4.0);
+    ui.label(RichText::new("Yours").size(13.0).color(theme::p().text_dim));
+    widgets::pills(ui, if current == studio.id { 0 } else { usize::MAX }, &[studio.name]).map(|_| studio.id.to_string())
 }
 
 /// "Yours": the user's own voices under the voices on this computer, once they made one. The
@@ -1434,11 +1468,55 @@ fn my_voices_ui(ed: &mut Editor, ui: &mut egui::Ui, current: &str) -> Option<Str
         } else if !delete_confirm(ui, &voices) {
             if let Some(v) = voices.get(idx) {
                 my_voice_details(ed, ui, v, busy);
+                if let Some(s) = studio_ui(ed, ui, v) {
+                    return Some(s);
+                }
             }
         }
         my_voice_progress(ed, ui);
     }
     picked.map(|i| voices[i].id.clone()).or(newly_picked)
+}
+
+/// Under one of the user's voices: its studio version, cloned by ElevenLabs (make, use,
+/// remove). Returns the studio voice when the user picks it.
+fn studio_ui(ed: &mut Editor, ui: &mut egui::Ui, v: &crate::my_voice::VoiceClone) -> Option<String> {
+    let pal = theme::p();
+    let from = crate::my_voice::studio_from();
+    let made = sf_tts::cloud::studio().is_some() && from.as_deref() == Some(v.id.as_str());
+    let offered = crate::my_voice::studio_offered();
+    if !made && !offered && !ed.my_voice.studio_working() {
+        return None;
+    }
+    let mut out = None;
+    ui.add_space(6.0);
+    ui.label(RichText::new("Studio quality").size(13.0).color(pal.text_dim));
+    if ed.my_voice.studio_working() {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            widgets::hint(ui, "ElevenLabs is working on your studio voice…");
+        });
+    } else if made {
+        widgets::hint(ui, &format!("ElevenLabs made a more realistic version of {}. It reads online, about 8 credits per 1,000 characters, and is under ElevenLabs → Yours.", v.name));
+        ui.horizontal(|ui| {
+            if widgets::accent_button(ui, "Use studio version").clicked() {
+                out = Some(sf_tts::cloud::STUDIO.to_string());
+            }
+            if widgets::secondary_button(ui, "Remove").on_hover_text("Delete it at ElevenLabs; this voice stays on this computer").clicked() {
+                ed.my_voice.remove_studio();
+            }
+        });
+    } else {
+        let replaces = sf_tts::cloud::studio().map(|s| format!(" It replaces your studio version {}.", s.name)).unwrap_or_default();
+        widgets::hint(ui, &format!("ElevenLabs can make a more realistic version of {} from its recordings, which are uploaded to ElevenLabs. Making it confirms this is your own voice and that you agree to ElevenLabs cloning it for your narration. Reading in it costs credits like the other ElevenLabs voices.{replaces}", v.name));
+        if widgets::secondary_button(ui, "Make studio version").on_hover_text("This is my own voice, and I agree to ElevenLabs making a clone of it for my narration").clicked() {
+            ed.my_voice.make_studio(&v.id);
+        }
+    }
+    if let Some(e) = &ed.my_voice.studio_error {
+        ui.label(RichText::new(e).size(13.0).color(pal.danger));
+    }
+    out
 }
 
 /// Making the voice as one step: a single bar across downloading the model (once), loading it
@@ -1785,8 +1863,37 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
         .unwrap_or_else(|| sf_tts::DEFAULT_VOICE.to_string());
     let online = sf_tts::cloud::cloud_voice(&voice);
     let speed = audio.narration_speed();
+    let language = audio.narration_language().map(str::to_string);
+    let lang_name = language.as_deref().map(|l| sf_tts::cloud::language(l).map_or(l, |x| x.name)).unwrap_or("English");
+    // the language comes first with ElevenLabs: it decides the voices offered
+    if online.is_some() {
+        widgets::title(ui, "Language");
+        if let Some(code) = language_combo(ui, language.as_deref()) {
+            // voices added on the backend since the app started
+            crate::narration::refresh_cloud_voices();
+            let lang = (code != "en").then(|| code.to_string());
+            // the new language's native narrator takes over (unless one is already chosen); a
+            // native speaker of another language gives way to the new language's first voice
+            let current_lang = online.and_then(|v| v.language);
+            let has_natives = sf_tts::cloud::voices_for(lang.as_deref()).iter().any(|v| v.language.is_some());
+            let switch = current_lang != lang.as_deref() && (has_natives || current_lang.is_some());
+            let default = sf_tts::cloud::default_voice(lang.as_deref()).id.to_string();
+            ed.edit(move |p| {
+                p.config.audio.narration_language = lang;
+                if switch {
+                    p.config.audio.narration_voice = Some(default);
+                }
+            });
+        }
+        let natives = sf_tts::cloud::voices_for(language.as_deref()).iter().filter(|v| v.language.is_some()).count();
+        widgets::hint(ui, &match (language.as_deref(), natives) {
+            (None, _) => "Write the script in the language it should be read in; ElevenLabs reads 90+ languages.".to_string(),
+            (Some(_), 0) => format!("Write the script in {lang_name}: the voices read the script as written, not translated. There are no native {lang_name} narrators yet; these voices read {lang_name} with a natural {lang_name} accent."),
+            (Some(_), _) => format!("Write the script in {lang_name}: these native {lang_name} narrators read it as written, not translated."),
+        });
+    }
     widgets::title(ui, "Voice");
-    if let Some(v) = voice_picker(ui, "panel", &voice, true, false) {
+    if let Some(v) = voice_picker(ui, "panel", &voice, true, false, language.as_deref()) {
         ed.edit(move |p| p.config.audio.narration_voice = Some(v.to_string()));
     }
     // the user's own voices on this computer: pick, add, rename, make again, delete
@@ -1801,6 +1908,9 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
         None if sf_tts::clone::is_my_voice(&voice) => widgets::hint(ui, &format!("{}: your own voice, free and private, read on this computer by Chatterbox Turbo.", crate::my_voice::name(&voice))),
         None => widgets::hint(ui, "Free and private: read on this computer, works offline."),
     }
+    if online.is_none() && language.is_some() {
+        widgets::hint(ui, &format!("The voices on this computer read English. Switch to ElevenLabs to narrate in {lang_name}."));
+    }
 
     ui.add_space(4.0);
     let playing = ed.narration.is_playing();
@@ -1809,7 +1919,7 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
         if playing {
             ed.narration.stop_preview();
         } else {
-            ed.narration.preview(&voice, speed);
+            ed.narration.preview(&voice, speed, language.as_deref());
         }
     }
     if by_preview {
@@ -1852,7 +1962,7 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
         };
         if widgets::accent_button(ui, &format!("Add at {}", crate::editor::fmt_clock(at))).on_hover_text(tip).clicked() {
             let source_ms = ed.session.timeline.output_to_source(at).unwrap_or(0.0);
-            let req = crate::narration::TakeRequest { text: ed.narration.draft.trim().to_string(), voice: voice.clone(), speed, replaces: None, source_ms };
+            let req = crate::narration::TakeRequest { text: ed.narration.draft.trim().to_string(), voice: voice.clone(), speed, language: language.clone(), replaces: None, source_ms };
             ed.narration.read(ed.path.clone(), vec![req]);
         }
     });
@@ -1880,7 +1990,7 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
         });
         ui.add_enabled_ui(work.is_none(), |ui| {
             if widgets::secondary_button(ui, &format!("Read all with {name}")).on_hover_text("Read every narration take again with this voice and speed, in the same places").clicked() {
-                let reqs = takes.into_iter().map(|(id, _, text, source_ms)| crate::narration::TakeRequest { text, voice: voice.clone(), speed, replaces: Some(id), source_ms }).collect();
+                let reqs = takes.into_iter().map(|(id, _, text, source_ms)| crate::narration::TakeRequest { text, voice: voice.clone(), speed, language: language.clone(), replaces: Some(id), source_ms }).collect();
                 ed.narration.read(ed.path.clone(), reqs);
             }
         });
