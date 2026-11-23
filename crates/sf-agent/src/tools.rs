@@ -52,6 +52,9 @@ pub struct Workspace {
     /// The project before each of the agent's earlier answers in this chat that changed it,
     /// oldest first, for `undo_answers`.
     pub earlier: Vec<Project>,
+    /// What the user wrote for this turn (empty outside a chat: tests, the command line). A
+    /// narration voice the agent picks is used only when this asks for a voice.
+    pub user_text: String,
 }
 
 /// Result of a tool that ran.
@@ -338,7 +341,7 @@ fn subtract(a: f64, b: f64, holes: &mut [(f64, f64)]) -> Vec<(f64, f64)> {
 
 impl Workspace {
     pub fn new(project: Project) -> Self {
-        Workspace { project, words: vec![], auto_zooms: vec![], activity: None, seek_to: None, content_px: (1920.0, 1080.0), audio_tracks: vec![], host: None, actions: vec![], earlier: vec![] }
+        Workspace { project, words: vec![], auto_zooms: vec![], activity: None, seek_to: None, content_px: (1920.0, 1080.0), audio_tracks: vec![], host: None, actions: vec![], earlier: vec![], user_text: String::new() }
     }
 
     pub(crate) fn timeline(&self) -> Timeline {

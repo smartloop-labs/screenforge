@@ -200,9 +200,13 @@ fn enhance_piece(samples: &[f32], mode: &Mode) -> Result<Vec<f32>, String> {
     let audio = base64::engine::general_purpose::STANDARD.encode(crate::voice_over::wav_bytes(RATE, samples));
     let mut body = serde_json::json!({ "device": device, "mode": if *mode == Mode::Clean { "clean" } else { "revoice" }, "audio": audio });
     if let Mode::Revoice(v) = mode {
-        body["voice"] = v.as_str().into();
+        body["voice"] = sf_tts::cloud::backend_voice(v).into();
     }
-    let reply = sf_license::call_backend_within("voice-enhance", body, 240)?;
+    let reply = if matches!(mode, Mode::Revoice(v) if v == sf_tts::cloud::STUDIO) {
+        crate::my_voice::with_studio(|| sf_license::call_backend_status_within("voice-enhance", body.clone(), 240))?
+    } else {
+        sf_license::call_backend_within("voice-enhance", body, 240)?
+    };
     crate::narration::note_credits(&reply);
     let mp3 = base64::engine::general_purpose::STANDARD.decode(reply["audio"].as_str().ok_or("ElevenLabs returned no audio")?).map_err(|e| e.to_string())?;
     let tmp = std::env::temp_dir().join(format!("screenforge-enhance-{}-{}.mp3", std::process::id(), chrono::Local::now().format("%H%M%S%3f")));

@@ -94,6 +94,7 @@ pub fn run_turn(route: &Route, settings: &Settings, conversation: Conversation, 
 /// [`run_turn`] with the request function passed in (tests answer without the network).
 pub fn run_turn_with(mut send: impl FnMut(Value) -> Result<Value, String>, mut conv: Conversation, ws: &mut Workspace, text: &str, context: &str, cancel: &AtomicBool, mut emit: impl FnMut(Event)) -> Conversation {
     conv.push_user(vec![json!({ "type": "text", "text": text }), json!({ "type": "text", "text": format!("<editor>{context}</editor>") })]);
+    ws.user_text = text.to_string();
     for _ in 0..MAX_STEPS {
         if cancel.load(Ordering::Relaxed) {
             emit(Event::Error("Stopped.".into()));

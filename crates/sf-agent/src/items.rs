@@ -11,7 +11,7 @@ use sf_project::{MusicClip, SceneAudioExt, SceneMusicExt, SceneTracksExt, Track,
 use crate::tools::{clock, num, opt_num, Outcome, Workspace};
 
 /// What a narration tool's `voice` can be.
-const VOICE_ARG: &str = "A voice id from the list above, a voice from get_options myVoices (its voice, or simply its name, e.g. \"Ricky\"), my_voice for the user's own voice chosen in the Narration panel, or a voice's name (\"Heart\", \"Eric\"). Left out: the voice chosen in the Narration panel.";
+const VOICE_ARG: &str = "A voice id from the list above, a voice from get_options myVoices (its voice, or simply its name, e.g. \"Ricky\"), my_voice for the user's own voice chosen in the Narration panel, or a voice's name (\"Heart\", \"Eric\"). Leave it out unless the user names a different voice in their message: left out, the narrator chosen in the Narration panel reads (get_options narrationVoice).";
 
 pub const LAYOUT_TYPES: [&str; 5] = ["screen-only", "camera-overlay", "split-screen", "fullscreen-camera", "cutout-camera"];
 
@@ -122,7 +122,7 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "add_narration",
-            "description": "Read text aloud with an AI voice (made on this computer) and add it as a voice-over take starting at start_ms; its words become captions. Write it as spoken sentences, and use one call per passage you place (one per section of the video); the result gives the take's end, so the next starts after it. Keep each passage within the part of the video it describes. On this computer, free: am_fenrir male, am_michael male, am_puck male, af_heart female, af_bella female, af_nicole female. ElevenLabs (studio quality, read online, about 8 credits per 1,000 characters from the user's credits; only when the user chose one in the Narration panel or asks for ElevenLabs, studio quality or a more realistic voice): el_eric male (use this one when asked for studio quality or a more realistic voice without naming a voice), el_brian male, el_george male British, el_daniel male British, el_sarah female, el_matilda female, el_alice female British, el_jessica female. The user's own voices are in get_options myVoices by name, read free on this computer. When they ask for a voice by name (\"narrate with Ricky\"), use that entry's voice; my_voice alone is the one chosen in the Narration panel (use it when they ask for their own voice without a name; it fails if they have not made it under Narration → My voice, so tell them to; the first reading downloads its model, about 0.7 GB, and it reads slower than the other voices). Leave voice and speed out to use the ones the user chose in the Narration panel, and keep one voice for the whole video unless asked. speed 0.7–1.3 (1 = normal; ElevenLabs reads 0.7–1.2). The first on-device narration downloads the voice model (about 330 MB) and can take a minute. Lower the music (set_music volume 0.2–0.3) so the voice is heard.",
+            "description": "Read text aloud with an AI voice (made on this computer) and add it as a voice-over take starting at start_ms; its words become captions. Write it as spoken sentences in the narration language (the editor context names it; a native narrator reads only its own language, so translate the user's words into it when they wrote in another), and use one call per passage you place (one per section of the video); the result gives the take's end, so the next starts after it. Keep each passage within the part of the video it describes. On this computer, free: am_fenrir male, am_michael male, am_puck male, af_heart female, af_bella female, af_nicole female. The narrator is the one the user selected in the Narration panel (get_options narrationVoice): leave voice out so it reads, and never choose a voice yourself; give voice only when the user asks for a different voice in their message (by name, or \"studio quality\", \"a female voice\" …). ElevenLabs (studio quality, read online, about 8 credits per 1,000 characters from the user's credits): el_eric male (when the user asks for studio quality or a more realistic voice without naming one), el_brian male, el_george male British, el_daniel male British, el_sarah female, el_matilda female, el_alice female British, el_jessica female; these read every language. More ElevenLabs voices, native speakers of other languages, are in get_options cloudVoices (voice, name, female, style, language): for narration in another language the user selects a native narrator in the panel; suggest one only if they ask. The cloudVoices entry with studio true is the user's own voice cloned by ElevenLabs (studio quality, read online and paid like the other ElevenLabs voices): use it when they ask for their own voice in studio quality, more realistic or with ElevenLabs. language: the language the text is in, as a code (\"es\", \"fr\", \"de\", \"ja\"); leave it out for the language chosen in the Narration panel (narrationLanguage in get_options, English when absent), and give it when the user asks for narration in another language, writing the text in that language. Only ElevenLabs voices read languages other than English. The user's own voices are in get_options myVoices by name, read free on this computer. When they ask for a voice by name (\"narrate with Ricky\"), use that entry's voice; my_voice alone is the one chosen in the Narration panel (use it when they ask for their own voice without a name; it fails if they have not made it under Narration → My voice, so tell them to; the first reading downloads its model, about 0.7 GB, and it reads slower than the other voices). Leave speed out too (the panel's), and keep the panel's narrator for the whole video unless asked. speed 0.7–1.3 (1 = normal; ElevenLabs reads 0.7–1.2). The first on-device narration downloads the voice model (about 330 MB) and can take a minute. Lower the music (set_music volume 0.2–0.3) so the voice is heard.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -130,21 +130,23 @@ pub fn definitions() -> Vec<Value> {
                     "start_ms": { "type": "number" },
                     // the user's own voices (get_options myVoices) are not a fixed list
                     "voice": { "type": "string", "description": VOICE_ARG },
-                    "speed": { "type": "number" }
+                    "speed": { "type": "number" },
+                    "language": { "type": "string" }
                 },
                 "required": ["text", "start_ms"]
             }
         }),
         json!({
             "name": "update_narration",
-            "description": "Read a narration take again, in the same place: new text, another voice, or another speed (give any of them; what is left out stays). id is a voice-over from get_project that has aiVoice (one recorded with a microphone cannot be read again). Use it when the user asks to change what a narration says, or to narrate it in another voice (\"make the intro Ricky's voice\"); to change every take's voice, call it once per take.",
+            "description": "Read a narration take again, in the same place: new text, another voice, another speed or another language (give any of them; what is left out stays, except language, which is the Narration panel's unless given). id is a voice-over from get_project that has aiVoice (one recorded with a microphone cannot be read again). Use it when the user asks to change what a narration says, or to narrate it in another voice (\"make the intro Ricky's voice\"); to change every take's voice, call it once per take.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string" },
                     "text": { "type": "string" },
                     "voice": { "type": "string", "description": VOICE_ARG },
-                    "speed": { "type": "number" }
+                    "speed": { "type": "number" },
+                    "language": { "type": "string" }
                 },
                 "required": ["id"]
             }
@@ -545,15 +547,17 @@ impl Workspace {
     /// first), or a voice's name ("Ricky" from get_options myVoices, "Heart", "Eric"). `None`:
     /// the voice chosen in the Narration panel.
     fn voice(&self, asked: Option<&str>) -> Result<String, String> {
-        let own = |v: &str| v.starts_with("my_voice:");
-        let known = |v: &str| own(v) || crate::host::VOICES.iter().any(|(id, _)| *id == v);
-        let chosen = self.project.config.audio.narration_voice.clone().filter(|v| known(v));
         let options = self.host.as_deref().map(|h| h.options()).unwrap_or_default();
         let listed = |key: &str| -> Vec<(String, String)> {
             options.get(key).and_then(Value::as_array).into_iter().flatten().filter_map(|v| Some((v.get("voice")?.as_str()?.to_string(), v.get("name")?.as_str()?.to_string()))).collect()
         };
         // made on this computer
         let mine = listed("myVoices");
+        // ElevenLabs' voices beyond the built-in ones (native speakers of other languages)
+        let cloud = listed("cloudVoices");
+        let own = |v: &str| v.starts_with("my_voice:");
+        let known = |v: &str| own(v) || crate::host::VOICES.iter().any(|(id, _)| *id == v) || cloud.iter().any(|(id, _)| id == v);
+        let chosen = self.project.config.audio.narration_voice.clone().filter(|v| known(v));
         let Some(asked) = asked.map(str::trim).filter(|a| !a.is_empty()) else {
             return Ok(chosen.unwrap_or_else(|| crate::host::VOICES[0].0.to_string()));
         };
@@ -571,8 +575,57 @@ impl Workspace {
         if let Some((id, _)) = crate::host::VOICES.iter().find(|(id, _)| id.split_once('_').is_some_and(|(_, n)| n == name)) {
             return Ok(id.to_string());
         }
+        if let Some((id, _)) = cloud.iter().find(|(_, n)| n.to_lowercase() == name) {
+            return Ok(id.clone());
+        }
         let names: Vec<&str> = mine.iter().map(|m| m.1.as_str()).collect();
         Err(if names.is_empty() { format!("unknown voice {asked}") } else { format!("unknown voice {asked}; the user's own voices are {}", names.join(", ")) })
+    }
+
+    /// The voice a narration tool's input asks for, when the user asked for a voice in their
+    /// message (by its name or id, or by saying "voice", "studio", "ElevenLabs" …); `None`
+    /// otherwise, so the narrator chosen in the Narration panel reads. Outside a chat (no
+    /// message) the input's voice stands.
+    fn wanted_voice<'a>(&self, input: &'a Value) -> Option<&'a str> {
+        let asked = input.get("voice").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())?;
+        if self.user_text.trim().is_empty() || self.project.config.audio.narration_voice.is_none() {
+            return Some(asked);
+        }
+        let said = self.user_text.to_lowercase().replace("voice-over", " ").replace("voiceover", " ").replace("voice over", " ");
+        let mut names = vec![asked.to_lowercase()];
+        names.extend(asked.rsplit(['_', ':']).next().map(str::to_lowercase));
+        // a voice's name from get_options (the user's own voices, the backend's narrators)
+        let options = self.host.as_deref().map(|h| h.options()).unwrap_or_default();
+        for key in ["myVoices", "cloudVoices"] {
+            for v in options.get(key).and_then(Value::as_array).into_iter().flatten() {
+                if v.get("voice").and_then(Value::as_str) == Some(asked) {
+                    names.extend(v.get("name").and_then(Value::as_str).and_then(|n| n.split(" (").next()).map(str::to_lowercase));
+                }
+            }
+        }
+        let generic = ["voice", "narrator", "studio", "realistic", "elevenlabs", "male", "female", "woman", "man", "accent"];
+        let words: Vec<&str> = said.split(|c: char| !c.is_alphanumeric() && c != '_' && c != ':').filter(|w| !w.is_empty()).collect();
+        let mentioned = names.iter().filter(|n| n.len() > 1).any(|n| said.contains(n.as_str())) || words.iter().any(|w| generic.contains(w));
+        mentioned.then_some(asked)
+    }
+
+    /// The language a narration is read in: `language` from the tool's input, else the
+    /// language `voice` is a native narrator of (get_options cloudVoices), else the one chosen
+    /// in the Narration panel; `None` is English.
+    fn narration_language(&self, input: &Value, voice: &str) -> Result<Option<String>, String> {
+        match input.get("language").and_then(Value::as_str).map(|l| l.trim().to_lowercase()) {
+            Some(l) if l.is_empty() || l == "en" => Ok(None),
+            Some(l) if (2..=3).contains(&l.len()) && l.bytes().all(|b| b.is_ascii_lowercase()) => Ok(Some(l)),
+            Some(l) => Err(format!("`language` is a two-letter language code (\"es\", \"de\", \"ja\"), not {l}")),
+            None => Ok(self.voice_language(voice).or_else(|| self.project.config.audio.narration_language().map(str::to_string))),
+        }
+    }
+
+    /// The language `voice` is a native narrator of, from get_options cloudVoices.
+    fn voice_language(&self, voice: &str) -> Option<String> {
+        let options = self.host.as_deref().map(|h| h.options()).unwrap_or_default();
+        let list = options.get("cloudVoices").and_then(Value::as_array).cloned().unwrap_or_default();
+        list.iter().find(|v| v.get("voice").and_then(Value::as_str) == Some(voice)).and_then(|v| v.get("language")?.as_str()).filter(|l| *l != "en").map(str::to_string)
     }
 
     /// Read an AI-voiced take again with new text, another voice or speed, in the same place
@@ -586,13 +639,16 @@ impl Workspace {
         let text = input.get("text").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
         let asked_voice = input.get("voice").and_then(Value::as_str);
         let speed = opt_num(input, "speed")?;
-        if text.is_none() && asked_voice.is_none() && speed.is_none() {
-            return Err("give the new text, voice or speed".into());
+        if text.is_none() && asked_voice.is_none() && speed.is_none() && input.get("language").is_none() {
+            return Err("give the new text, voice, speed or language".into());
         }
-        let voice = match asked_voice {
-            Some(v) => self.voice(Some(v))?,
-            None => old_voice,
+        let voice = match (asked_voice, self.wanted_voice(input)) {
+            (_, Some(v)) => self.voice(Some(v))?,
+            // a voice the user did not ask for: the Narration panel's
+            (Some(_), None) => self.voice(None)?,
+            (None, None) => old_voice,
         };
+        let language = self.narration_language(input, &voice)?;
         let speed = speed.unwrap_or(self.project.config.audio.narration_speed());
         if !(0.5..=2.0).contains(&speed) {
             return Err("`speed` is 0.7–1.3 (1 = normal)".into());
@@ -601,7 +657,7 @@ impl Workspace {
         if text.is_empty() {
             return Err("this take has no text to read; give `text`".into());
         }
-        let spoken = self.host.as_deref().ok_or("not available here (no editor)")?.speak(&text, &voice, speed)?;
+        let spoken = self.host.as_deref().ok_or("not available here (no editor)")?.speak(&text, &voice, speed, language.as_deref())?;
         let fresh = sf_project::v4::VoiceOver::spoken(source, spoken.duration_ms, spoken.file_name, &text, &voice);
         let take = self.project.scenes[0].voice_overs.iter_mut().find(|v| v.id == id).ok_or_else(|| format!("no voice-over {id}"))?;
         take.file_name = fresh.file_name;
@@ -611,7 +667,7 @@ impl Workspace {
         let tl = self.timeline();
         let start = tl.source_to_output(source).unwrap_or(0.0);
         let end = start + spoken.duration_ms;
-        let mut result = json!({ "id": id, "startMs": start.round(), "endMs": end.round(), "voice": voice });
+        let mut result = json!({ "id": id, "startMs": start.round(), "endMs": end.round(), "voice": voice, "language": language.as_deref().unwrap_or("en") });
         if end > tl.duration_ms() {
             result["note"] = json!(format!("The narration now runs {:.1} s past the end of the video and is cut there.", (end - tl.duration_ms()) / 1000.0));
         }
@@ -621,9 +677,10 @@ impl Workspace {
     fn add_narration(&mut self, input: &Value) -> Result<Outcome, String> {
         let text = input.get("text").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).ok_or("`text` is required")?;
         let t = num(input, "start_ms")?;
-        // the voice and speed chosen in the Narration panel, unless asked for another
-        let voice = self.voice(input.get("voice").and_then(Value::as_str))?;
+        // the voice and speed chosen in the Narration panel, unless the user asked for another
+        let voice = self.voice(self.wanted_voice(input))?;
         let voice = voice.as_str();
+        let language = self.narration_language(input, voice)?;
         let audio = &self.project.config.audio;
         let speed = opt_num(input, "speed")?.unwrap_or(audio.narration_speed());
         if !(0.5..=2.0).contains(&speed) {
@@ -634,12 +691,12 @@ impl Workspace {
             return Err(format!("{} is not on the timeline (it is {} long)", clock(t), clock(tl.duration_ms())));
         }
         let source = tl.output_to_source(t).ok_or_else(|| format!("{} is not on the timeline", clock(t)))?;
-        let spoken = self.host.as_deref().ok_or("not available here (no editor)")?.speak(text, voice, speed)?;
+        let spoken = self.host.as_deref().ok_or("not available here (no editor)")?.speak(text, voice, speed, language.as_deref())?;
         let vo = sf_project::v4::VoiceOver::spoken(source, spoken.duration_ms, spoken.file_name, text, voice);
         let id = vo.id.clone();
         self.project.scenes[0].voice_overs.push(vo);
         let end = t + spoken.duration_ms;
-        let mut result = json!({ "id": id, "startMs": t.round(), "endMs": end.round(), "voice": voice });
+        let mut result = json!({ "id": id, "startMs": t.round(), "endMs": end.round(), "voice": voice, "language": language.as_deref().unwrap_or("en") });
         if end > tl.duration_ms() {
             result["note"] = json!(format!("The narration runs {:.1} s past the end of the video and is cut there; shorten the text, speed it up, or start it earlier.", (end - tl.duration_ms()) / 1000.0));
         }
@@ -723,7 +780,7 @@ mod tests {
     struct Voice;
     impl crate::Host for Voice {
         fn options(&self) -> Value {
-            json!({ "myVoices": [{ "voice": "my_voice:7", "name": "Ricky" }] })
+            json!({ "myVoices": [{ "voice": "my_voice:7", "name": "Ricky" }], "cloudVoices": [{ "voice": "el_es_lucia", "name": "Lucía", "language": "es" }] })
         }
         fn apply_preset(&self, _: &str, _: &mut Project) -> Result<(), String> {
             Err("no".into())
@@ -743,8 +800,8 @@ mod tests {
         fn screen_frames(&self, _: &[f64]) -> Result<Vec<Vec<u8>>, String> {
             Err("no".into())
         }
-        fn speak(&self, text: &str, voice: &str, _: f64) -> Result<crate::host::Spoken, String> {
-            Ok(crate::host::Spoken { file_name: format!("{voice}.wav"), duration_ms: text.len() as f64 * 100.0 })
+        fn speak(&self, text: &str, voice: &str, _: f64, language: Option<&str>) -> Result<crate::host::Spoken, String> {
+            Ok(crate::host::Spoken { file_name: format!("{voice}{}.wav", language.map(|l| format!("-{l}")).unwrap_or_default()), duration_ms: text.len() as f64 * 100.0 })
         }
     }
 
@@ -801,6 +858,61 @@ mod tests {
         assert_eq!(w.project.scenes[0].voice_overs.len(), 1);
         assert!(w.run("update_narration", &json!({ "id": id })).is_err(), "nothing to change");
         assert!(w.run("update_narration", &json!({ "id": "nope", "text": "x" })).is_err());
+    }
+
+    #[test]
+    fn narration_is_read_in_the_language_asked_for_or_the_panels() {
+        let mut w = ws();
+        w.host = Some(std::sync::Arc::new(Voice));
+        // a native speaker from cloudVoices, by id and by name
+        w.run("add_narration", &json!({ "text": "Hola", "start_ms": 1000, "voice": "el_es_lucia", "language": "es" })).unwrap();
+        w.run("add_narration", &json!({ "text": "Hola", "start_ms": 2000, "voice": "lucía", "language": "ES" })).unwrap();
+        // the panel's language when none is asked for; English is never sent
+        w.project.config.audio.narration_language = Some("de".into());
+        w.run("add_narration", &json!({ "text": "Hallo", "start_ms": 3000, "voice": "el_eric" })).unwrap();
+        w.run("add_narration", &json!({ "text": "Hi", "start_ms": 4000, "voice": "el_eric", "language": "en" })).unwrap();
+        let files: Vec<_> = w.project.scenes[0].voice_overs.iter().map(|v| v.file_name.as_str()).collect();
+        assert_eq!(files, ["el_es_lucia-es.wav", "el_es_lucia-es.wav", "el_eric-de.wav", "el_eric.wav"]);
+        // a native narrator reads its own language without being told
+        w.run("add_narration", &json!({ "text": "Hola", "start_ms": 5000, "voice": "el_es_lucia" })).unwrap();
+        assert_eq!(w.project.scenes[0].voice_overs.last().unwrap().file_name, "el_es_lucia-es.wav");
+        assert!(w.run("add_narration", &json!({ "text": "Hi", "start_ms": 1000, "language": "Spanish" })).is_err());
+        // read again in another language only
+        let id = w.project.scenes[0].voice_overs[3].id.clone();
+        w.run("update_narration", &json!({ "id": id, "language": "fr" })).unwrap();
+        assert_eq!(w.project.scenes[0].voice_overs[3].file_name, "el_eric-fr.wav");
+    }
+
+    #[test]
+    fn a_voice_the_user_did_not_ask_for_gives_way_to_the_panels() {
+        let mut w = ws();
+        w.host = Some(std::sync::Arc::new(Voice));
+        w.project.config.audio.narration_voice = Some("el_sarah".into());
+        let voice = |w: &mut Workspace, said: &str, input: Value| {
+            w.user_text = said.into();
+            w.run("add_narration", &input).unwrap();
+            w.project.scenes[0].voice_overs.last().unwrap().spoken_voice().unwrap().to_string()
+        };
+        // the agent repeats a voice from earlier in the chat: the panel's reads
+        assert_eq!(voice(&mut w, "narrate the intro", json!({ "text": "Hi", "start_ms": 1000, "voice": "el_eric" })), "el_sarah");
+        assert_eq!(voice(&mut w, "add a voice-over here", json!({ "text": "Hi", "start_ms": 1000, "voice": "el_eric" })), "el_sarah");
+        // asked for by name, by the user's own voice's name, or by kind
+        assert_eq!(voice(&mut w, "narrate it with Eric", json!({ "text": "Hi", "start_ms": 1000, "voice": "el_eric" })), "el_eric");
+        assert_eq!(voice(&mut w, "use Ricky", json!({ "text": "Hi", "start_ms": 1000, "voice": "my_voice:7" })), "my_voice:7");
+        assert_eq!(voice(&mut w, "a female voice please", json!({ "text": "Hi", "start_ms": 1000, "voice": "af_heart" })), "af_heart");
+        assert_eq!(voice(&mut w, "use Lucía", json!({ "text": "Hi", "start_ms": 1000, "voice": "el_es_lucia" })), "el_es_lucia");
+    }
+
+    #[test]
+    fn the_panels_narrator_reads_when_no_voice_is_given() {
+        let mut w = ws();
+        w.host = Some(std::sync::Arc::new(Voice));
+        // a native narrator from the backend's list, and a built-in ElevenLabs voice
+        for chosen in ["el_es_lucia", "el_sarah"] {
+            w.project.config.audio.narration_voice = Some(chosen.into());
+            w.run("add_narration", &json!({ "text": "Hi", "start_ms": 1000 })).unwrap();
+            assert_eq!(w.project.scenes[0].voice_overs.last().unwrap().spoken_voice(), Some(chosen));
+        }
     }
 
     #[test]

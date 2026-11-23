@@ -141,7 +141,19 @@ fn save_meta(c: &VoiceClone) -> Result<(), String> {
 pub fn rename(id: &str, name: &str) -> Result<(), String> {
     let Some(mut c) = read_voice(id) else { return Ok(()) };
     c.name = clean_name(name);
-    save_meta(&c)
+    save_meta(&c)?;
+    // its studio voice is called the same
+    if studio_from().as_deref() == Some(id) {
+        let name = c.name.clone();
+        save_studio(id, &name);
+        sf_tts::cloud::set_studio(Some(&name));
+        std::thread::spawn(move || {
+            if let Err(e) = call(serde_json::json!({ "action": "rename", "name": name }), 30) {
+                tracing::warn!("studio voice not renamed: {e}");
+            }
+        });
+    }
+    Ok(())
 }
 
 /// The recording voice `id` is read from, mono at [`SAMPLE_RATE`].
@@ -155,6 +167,14 @@ pub fn reference(id: &str) -> Result<Vec<f32>, String> {
 pub fn delete(id: &str) -> Result<(), String> {
     let Some(dir) = voice_dir(id).filter(|d| d.exists()) else { return Ok(()) };
     crate::narration::forget_previews(id);
+    // the studio voice made from it goes too (it could not be made again without it)
+    if studio_from().as_deref() == Some(id) {
+        std::thread::spawn(|| {
+            if let Err(e) = remove_studio() {
+                tracing::warn!("studio voice not deleted: {e}");
+            }
+        });
+    }
     std::fs::remove_dir_all(dir).map_err(|e| format!("Could not delete your voice: {e}"))
 }
 
@@ -214,6 +234,9 @@ pub struct MyVoiceJob {
     /// When the panel last drew the form (the meter lets go of the microphone soon after it
     /// stops being shown).
     shown_at: Option<Instant>,
+    /// Making or removing the studio voice ([`sf_tts::cloud::STUDIO`]).
+    studio_run: Option<Receiver<Result<(), String>>>,
+    pub studio_error: Option<String>,
 }
 
 /// What the panel shows of the microphone.
@@ -234,6 +257,34 @@ impl MyVoiceJob {
 
     pub fn working(&self) -> Option<Work> {
         self.running.as_ref().map(|r| r.1)
+    }
+
+    /// The studio voice is being made or removed.
+    pub fn studio_working(&self) -> bool {
+        self.studio_run.is_some()
+    }
+
+    /// Make the studio voice from voice `from` (replacing one made before).
+    pub fn make_studio(&mut self, from: &str) {
+        let from = from.to_string();
+        self.run_studio(move || make_studio(&from));
+    }
+
+    /// Delete the studio voice at ElevenLabs.
+    pub fn remove_studio(&mut self) {
+        self.run_studio(remove_studio);
+    }
+
+    fn run_studio(&mut self, f: impl FnOnce() -> Result<(), String> + Send + 'static) {
+        if self.studio_run.is_some() {
+            return;
+        }
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        self.studio_run = Some(rx);
+        self.studio_error = None;
     }
 
     /// Keep the meter going (`mic_id`: the voice-over microphone, `None` for the default) and
@@ -372,6 +423,10 @@ impl MyVoiceJob {
     /// Drain the result of a finished run; let go of the microphone's meter once the form is
     /// no longer shown (another panel, or the sidebar scrolled on).
     pub fn poll(&mut self) {
+        if let Some(r) = self.studio_run.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.studio_run = None;
+            self.studio_error = r.err();
+        }
         if self.meter.is_some() && self.shown_at.is_none_or(|t| t.elapsed().as_millis() > 500) {
             self.meter = None;
             self.levels.clear();
@@ -416,7 +471,8 @@ impl MyVoiceJob {
 /// once (its preview, kept) to be sure it works, and only then saved, as voice `id` (made again)
 /// or a new one. Returns its id.
 fn make(files: &[PathBuf], name: String, id: Option<String>, denoise: bool, tx: &std::sync::mpsc::Sender<Making>) -> Result<String, String> {
-    let reference = joined_voice(files, denoise)?;
+    let recordings = joined_voice(files, denoise)?;
+    let reference = recordings[..recordings.len().min((MAX_REFERENCE_S * SAMPLE_RATE as f64) as usize)].to_vec();
     let _ = tx.send(Making::Stage(Work::Downloading));
     sf_tts::clone::ensure(&std::sync::atomic::AtomicBool::new(false), |p| {
         let _ = tx.send(Making::Progress(p));
@@ -431,14 +487,17 @@ fn make(files: &[PathBuf], name: String, id: Option<String>, denoise: bool, tx: 
     let dir = voice_dir(&id).ok_or("no folder for your voice")?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Could not save your voice: {e}"))?;
     sf_tts::Speech { samples: reference, words: vec![] }.write_wav(&dir.join("reference.wav")).map_err(|e| format!("Could not save your voice: {e:#}"))?;
+    // all of it, for a studio voice (ElevenLabs learns a voice better from more)
+    sf_tts::Speech { samples: recordings, words: vec![] }.write_wav(&dir.join("recordings.wav")).map_err(|e| format!("Could not save your voice: {e:#}"))?;
     save_meta(&voice)?;
     Ok(id)
 }
 
 /// The picked recordings' voice, trimmed of silence at both ends, joined with short pauses and
-/// cut off at [`MAX_REFERENCE_S`].
+/// cut off at [`STUDIO_MAX_S`] (the voice on this computer listens to the first
+/// [`MAX_REFERENCE_S`]).
 fn joined_voice(files: &[PathBuf], denoise: bool) -> Result<Vec<f32>, String> {
-    let max = (MAX_REFERENCE_S * SAMPLE_RATE as f64) as usize;
+    let max = (STUDIO_MAX_S * SAMPLE_RATE as f64) as usize;
     // the microphone's Noise reduction preset: rumble cut and FFT noise reduction
     let filter = denoise.then(|| sf_media::audio::microphone_filter("noise-reduction", 0.0)).flatten();
     let mut out: Vec<f32> = vec![];
@@ -474,6 +533,138 @@ fn trim_silence(samples: &[f32]) -> Vec<f32> {
     let start = samples.iter().position(|s| s.abs() > SILENCE).unwrap_or(samples.len());
     let end = samples.iter().rposition(|s| s.abs() > SILENCE).map_or(start, |i| i + 1);
     samples[start..end.max(start)].to_vec()
+}
+
+// ── The studio voice: the user's voice cloned by ElevenLabs on ScreenForge's account ──
+//
+// Made from one of their voices on this computer (its recordings are uploaded to the backend's
+// `my-voice`, which makes an Instant Voice Clone), one per license. It reads like the other
+// ElevenLabs voices, paid in credits, as `sf_tts::cloud::STUDIO`. The backend puts away clones
+// unused for a while (to free the account's voice slots); reading with one put away makes it
+// again from the same recordings, here, and reads once more.
+
+/// Most of the recordings uploaded for a studio voice (s): ElevenLabs suggests 1–2 minutes.
+const STUDIO_MAX_S: f64 = 90.0;
+
+/// What the backend says about studio voices here: (new ones are made, this computer may make
+/// one). Until it answered: neither.
+static STUDIO_OFFER: std::sync::Mutex<(bool, bool)> = std::sync::Mutex::new((false, false));
+
+/// The panel offers to make a studio voice (the backend makes them and the user has Pro).
+pub fn studio_offered() -> bool {
+    STUDIO_OFFER.lock().map(|o| o.0 && o.1).unwrap_or(false)
+}
+
+/// Which voice the studio voice was made from, and its name: kept beside the voices.
+fn studio_file() -> Option<PathBuf> {
+    voices_dir().map(|d| d.with_file_name("my-voice-studio.json"))
+}
+
+/// The voice on this computer the studio voice was made from.
+pub fn studio_from() -> Option<String> {
+    let f = studio_file()?;
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(f).ok()?).ok()?;
+    v["from"].as_str().map(str::to_string)
+}
+
+fn save_studio(from: &str, name: &str) {
+    if let Some(f) = studio_file() {
+        let _ = f.parent().map(std::fs::create_dir_all);
+        let _ = std::fs::write(f, serde_json::json!({ "from": from, "name": name }).to_string());
+    }
+}
+
+fn forget_studio() {
+    if let Some(f) = studio_file() {
+        let _ = std::fs::remove_file(f);
+    }
+    sf_tts::cloud::set_studio(None);
+    crate::narration::forget_previews(sf_tts::cloud::STUDIO);
+}
+
+/// Call the backend's `my-voice`.
+fn call(body: serde_json::Value, secs: u64) -> Result<serde_json::Value, String> {
+    let device = sf_license::device_id().ok_or("ElevenLabs needs this computer's id, which could not be read")?;
+    let mut body = body;
+    body["device"] = device.into();
+    sf_license::call_backend_within("my-voice", body, secs)
+}
+
+/// Ask the backend whether the user has a studio voice and may make one, once a run (in the
+/// background): the voice is offered from then on.
+pub fn load_studio() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // the name kept here, until the backend answers
+        if let Some(name) = studio_file().and_then(|f| std::fs::read(f).ok()).and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()).and_then(|v| v["name"].as_str().map(str::to_string)) {
+            sf_tts::cloud::set_studio(Some(&name));
+        }
+        std::thread::spawn(|| match call(serde_json::json!({ "action": "status" }), 15) {
+            Ok(reply) => {
+                if let Ok(mut o) = STUDIO_OFFER.lock() {
+                    *o = (reply["enabled"].as_bool() == Some(true), reply["pro"].as_bool() == Some(true));
+                }
+                match reply["voice"]["name"].as_str() {
+                    Some(name) => sf_tts::cloud::set_studio(Some(name)),
+                    // deleted elsewhere (another computer of the same license)
+                    None => forget_studio(),
+                }
+            }
+            Err(e) => tracing::info!("studio voice status not loaded: {e}"),
+        });
+    });
+}
+
+/// Voice `from`'s recordings for a studio voice: all of them when kept, else the part the voice
+/// on this computer reads from (voices made before recordings were kept).
+fn studio_samples(from: &str) -> Result<Vec<f32>, String> {
+    let dir = voice_dir(from).ok_or("That voice is no longer on this computer.")?;
+    let file = [dir.join("recordings.wav"), dir.join("reference.wav")].into_iter().find(|f| f.is_file()).ok_or("That voice is no longer on this computer.")?;
+    let mut s = sf_media::audio::decode(&file, SAMPLE_RATE, 1).map_err(|e| format!("Could not read your voice: {e}"))?.samples.to_vec();
+    s.truncate((STUDIO_MAX_S * SAMPLE_RATE as f64) as usize);
+    Ok(s)
+}
+
+/// Make the studio voice from voice `from` (blocking).
+fn make_studio(from: &str) -> Result<(), String> {
+    let v = get(from).ok_or("That voice is no longer on this computer.")?;
+    let samples = studio_samples(&v.id)?;
+    use base64::Engine;
+    let wav = base64::engine::general_purpose::STANDARD.encode(crate::voice_over::wav_bytes(SAMPLE_RATE, &samples));
+    // consent: the user pressed Make a studio version under the text saying what it does; the
+    // recordings were cleaned up when the voice was made
+    let reply = call(serde_json::json!({ "action": "create", "consent": true, "clean": false, "name": v.name, "samples": [wav] }), 240)?;
+    let name = reply["voice"]["name"].as_str().unwrap_or(&v.name).to_string();
+    save_studio(&v.id, &name);
+    crate::narration::forget_previews(sf_tts::cloud::STUDIO);
+    sf_tts::cloud::set_studio(Some(&name));
+    Ok(())
+}
+
+/// Delete the studio voice (blocking).
+fn remove_studio() -> Result<(), String> {
+    call(serde_json::json!({ "action": "delete" }), 30)?;
+    forget_studio();
+    Ok(())
+}
+
+/// Run `request` (a backend call reading with the studio voice, which answers with its HTTP
+/// status on a refusal). When the backend had put the voice away (409), it is made again from
+/// the voice it was made from and `request` runs once more.
+pub fn with_studio(request: impl Fn() -> Result<serde_json::Value, (u16, String)>) -> Result<serde_json::Value, String> {
+    match request() {
+        Err((409, _)) => {
+            let from = studio_from().ok_or("Your studio voice was put away after a while unused, and the voice it was made from is not on this computer. Make it again under Narration → My voice.")?;
+            make_studio(&from).map_err(|e| format!("Could not make your studio voice again: {e}"))?;
+            request().map_err(|(_, e)| e)
+        }
+        // gone at ElevenLabs, or deleted on another computer: no longer offered here
+        Err((404, e)) => {
+            forget_studio();
+            Err(e)
+        }
+        r => r.map_err(|(_, e)| e),
+    }
 }
 
 #[cfg(test)]

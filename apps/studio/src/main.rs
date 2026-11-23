@@ -23,6 +23,7 @@ mod os;
 mod permissions;
 mod picker;
 mod recorder;
+mod shaped;
 mod share;
 mod sidebar;
 mod theme;

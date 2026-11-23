@@ -1,8 +1,15 @@
 //! Caption text rasterised on the CPU into a premultiplied RGBA image, then drawn as a
 //! sprite. One line per image: a rounded background box with the words on it, or the words
 //! alone over a soft shadow.
+//!
+//! Text is shaped with rustybuzz (so Devanagari conjuncts and Arabic joining come out right)
+//! and drawn with ab_glyph. The bundled fonts cover Latin and Cyrillic; other scripts (Hindi,
+//! Arabic, Chinese, Japanese, Korean …) are drawn with a system font that has them.
 
-use ab_glyph::{Font, FontRef, Glyph, PxScale, ScaleFont};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+use ab_glyph::{Font, FontRef, Glyph, GlyphId, PxScale, ScaleFont};
 
 use crate::Color;
 
@@ -26,8 +33,13 @@ impl FontFamily {
         }
     }
 
-    /// The bundled subsets, tried in order for each glyph.
-    fn fonts(self) -> Vec<FontRef<'static>> {
+    /// The bundled subsets, tried in order for each glyph (loaded once).
+    fn fonts(self) -> &'static [Face] {
+        static FACES: [OnceLock<Vec<Face>>; 4] = [OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new()];
+        FACES[self as usize].get_or_init(|| self.load())
+    }
+
+    fn load(self) -> Vec<Face> {
         let data: [&'static [u8]; 3] = match self {
             FontFamily::Sans => [
                 include_bytes!("../fonts/Inter-SemiBold-latin.ttf"),
@@ -52,8 +64,133 @@ impl FontFamily {
         };
         // key symbols (⌘ ⇧ ⌥ ⏎ …) for every family: only Inter carries them
         let symbols: &'static [u8] = include_bytes!("../fonts/Inter-SemiBold-symbols.ttf");
-        data.iter().chain([&symbols]).filter_map(|d| FontRef::try_from_slice(d).ok()).collect()
+        data.iter().chain([&symbols]).filter_map(|d| Face::new(d, 0)).collect()
     }
+}
+
+/// A font face: rustybuzz shapes text with it, ab_glyph draws its outlines.
+pub struct Face {
+    font: FontRef<'static>,
+    hb: rustybuzz::Face<'static>,
+    data: &'static [u8],
+    index: u32,
+}
+
+impl Face {
+    fn new(data: &'static [u8], index: u32) -> Option<Face> {
+        Some(Face { font: FontRef::try_from_slice_and_index(data, index).ok()?, hb: rustybuzz::Face::from_slice(data, index)?, data, index })
+    }
+
+    fn covers(&self, c: char) -> bool {
+        self.font.glyph_id(c).0 != 0
+    }
+}
+
+/// System fonts tried first for scripts the bundled fonts lack (macOS's, then common Linux
+/// ones), each at a bold weight when it has one.
+const FALLBACK_FAMILIES: &[&str] = &[
+    "Kohinoor Devanagari",
+    "Noto Sans Devanagari",
+    "Devanagari Sangam MN",
+    "Geeza Pro",
+    "Noto Sans Arabic",
+    "PingFang SC",
+    "Hiragino Sans",
+    "Apple SD Gothic Neo",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK KR",
+    "Noto Serif CJK SC",
+    "Noto Serif CJK JP",
+    "Noto Serif CJK KR",
+    "Arial Unicode MS",
+];
+
+/// The installed fonts (read once).
+fn system_fonts() -> &'static fontdb::Database {
+    static DB: OnceLock<fontdb::Database> = OnceLock::new();
+    DB.get_or_init(|| {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        db
+    })
+}
+
+/// System face `id`, mapped into memory once and kept for the run.
+fn system_face(id: fontdb::ID) -> Option<&'static Face> {
+    static LOADED: OnceLock<Mutex<HashMap<fontdb::ID, Option<&'static Face>>>> = OnceLock::new();
+    static FILES: OnceLock<Mutex<HashMap<std::path::PathBuf, &'static [u8]>>> = OnceLock::new();
+    let loaded = LOADED.get_or_init(Default::default);
+    if let Some(f) = loaded.lock().ok()?.get(&id) {
+        return *f;
+    }
+    let (source, index) = system_fonts().face_source(id)?;
+    let data: Option<&'static [u8]> = match source {
+        fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => {
+            let mut files = FILES.get_or_init(Default::default).lock().ok()?;
+            match files.get(&path) {
+                Some(d) => Some(*d),
+                None => {
+                    let file = std::fs::File::open(&path).ok()?;
+                    // SAFETY: system font files are not changed while the app runs; a mapping
+                    // keeps a large CJK font out of memory until its glyphs are drawn
+                    let map = unsafe { memmap2::Mmap::map(&file) }.ok()?;
+                    let d: &'static [u8] = Box::leak(Box::new(map));
+                    files.insert(path, d);
+                    Some(d)
+                }
+            }
+        }
+        fontdb::Source::Binary(b) => Some(Box::leak((*b).as_ref().to_vec().into_boxed_slice())),
+    };
+    let face = data.and_then(|d| Face::new(d, index)).map(|f| &*Box::leak(Box::new(f)));
+    loaded.lock().ok()?.insert(id, face);
+    face
+}
+
+/// A system face with a glyph for `c`: the first of [`FALLBACK_FAMILIES`] that has it, else
+/// any installed font. Cached per character (`None`: no font has it).
+fn fallback(c: char) -> Option<&'static Face> {
+    static BY_CHAR: OnceLock<Mutex<HashMap<char, Option<&'static Face>>>> = OnceLock::new();
+    let cache = BY_CHAR.get_or_init(Default::default);
+    if let Some(f) = cache.lock().ok()?.get(&c) {
+        return *f;
+    }
+    let db = system_fonts();
+    let preferred = FALLBACK_FAMILIES.iter().filter_map(|name| {
+        let q = fontdb::Query { families: &[fontdb::Family::Name(name)], weight: fontdb::Weight::BOLD, ..Default::default() };
+        db.query(&q)
+    });
+    let found = preferred.chain(db.faces().map(|f| f.id)).filter_map(system_face).find(|f| f.covers(c));
+    cache.lock().ok()?.insert(c, found);
+    found
+}
+
+/// The system font file (its bytes and face index in a collection) that draws `c`, for
+/// another renderer (the app's interface) to use as a fallback.
+pub fn system_font_for(c: char) -> Option<(&'static [u8], u32)> {
+    fallback(c).map(|f| (f.data, f.index))
+}
+
+/// `text` needs shaping to read right: letters that join or combine (Indic scripts, Arabic,
+/// Hebrew, Thai …), which a renderer drawing one character at a time gets wrong.
+pub fn needs_shaping(text: &str) -> bool {
+    text.chars().any(|c| matches!(c as u32, 0x0590..=0x0DFF | 0x0E00..=0x0FFF | 0x1000..=0x109F | 0xFB1D..=0xFEFF))
+}
+
+/// Characters written right to left (Hebrew, Arabic and their presentation forms).
+fn is_rtl(c: char) -> bool {
+    matches!(c as u32, 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF)
+}
+
+/// Characters written without spaces between words (Han, kana, CJK punctuation).
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32, 0x3000..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFF60)
+}
+
+/// `text` is a right-to-left line (its first strong letter is).
+pub fn line_is_rtl<'a>(words: impl IntoIterator<Item = &'a str>) -> bool {
+    words.into_iter().flat_map(str::chars).find(|c| c.is_alphabetic()).is_some_and(is_rtl)
 }
 
 /// One word of the caption line.
@@ -100,61 +237,91 @@ pub struct TextImage {
 }
 
 struct Shaper {
-    fonts: Vec<FontRef<'static>>,
+    fonts: &'static [Face],
     scale: PxScale,
 }
 
+/// A glyph placed by shaping: its face, id, and pen offset (px) from the word's start.
+struct Placed {
+    face: &'static Face,
+    id: GlyphId,
+    x: f32,
+    y: f32,
+}
+
 impl Shaper {
-    fn font_for(&self, c: char) -> usize {
-        self.fonts.iter().position(|f| f.glyph_id(c).0 != 0).unwrap_or(0)
+    /// The face for `c`: a bundled one, else a system one, else the first bundled one.
+    fn face_for(&self, c: char) -> &'static Face {
+        self.fonts.iter().find(|f| f.covers(c)).or_else(|| fallback(c)).unwrap_or(&self.fonts[0])
+    }
+
+    /// `face` at the size of the bundled fonts' em (fonts differ in how tall their em is).
+    fn scale_for(&self, face: &Face) -> PxScale {
+        let main = &self.fonts[0].font;
+        let em_px = self.scale.y * main.units_per_em().unwrap_or(1000.0) / main.height_unscaled().max(1.0);
+        PxScale::from(em_px * face.font.height_unscaled() / face.font.units_per_em().unwrap_or(1000.0))
+    }
+
+    /// `text` shaped: its glyphs, and its advance (px). Runs of characters one face has are
+    /// shaped together (a mark stays with its letter's face).
+    fn shape(&self, text: &str) -> (Vec<Placed>, f32) {
+        let mut runs: Vec<(&'static Face, String)> = vec![];
+        for c in text.chars() {
+            match runs.last_mut() {
+                // zero-width joiners shape with the letters around them
+                Some((f, run)) if f.covers(c) || matches!(c, '\u{200C}' | '\u{200D}') => run.push(c),
+                _ => runs.push((self.face_for(c), c.to_string())),
+            }
+        }
+        let mut out = vec![];
+        let mut pen = 0.0;
+        for (face, run) in runs {
+            let mut buf = rustybuzz::UnicodeBuffer::new();
+            buf.push_str(&run);
+            buf.guess_segment_properties();
+            let glyphs = rustybuzz::shape(&face.hb, &[], buf);
+            let scaled = face.font.as_scaled(self.scale_for(face));
+            let (kx, ky) = (scaled.h_scale_factor(), scaled.v_scale_factor());
+            for (info, pos) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
+                out.push(Placed { face, id: GlyphId(info.glyph_id as u16), x: pen + pos.x_offset as f32 * kx, y: -pos.y_offset as f32 * ky });
+                pen += pos.x_advance as f32 * kx;
+            }
+        }
+        (out, pen)
     }
 
     fn word_width(&self, text: &str) -> f32 {
-        let mut w = 0.0;
-        let mut prev: Option<(usize, ab_glyph::GlyphId)> = None;
-        for c in text.chars() {
-            let fi = self.font_for(c);
-            let f = self.fonts[fi].as_scaled(self.scale);
-            let id = f.glyph_id(c);
-            if let Some((pf, pid)) = prev.filter(|p| p.0 == fi) {
-                w += f.kern(pid, id);
-                let _ = pf;
-            }
-            w += f.h_advance(id);
-            prev = Some((fi, id));
-        }
-        w
+        self.shape(text).1
     }
 
     fn space(&self) -> f32 {
-        self.fonts[0].as_scaled(self.scale).h_advance(self.fonts[0].glyph_id(' '))
+        self.fonts[0].font.as_scaled(self.scale).h_advance(self.fonts[0].font.glyph_id(' '))
+    }
+
+    /// The gap between words `a` and `b`: a space, or none between words written without
+    /// spaces (Chinese, Japanese).
+    fn gap(&self, a: &str, b: &str) -> f32 {
+        if a.chars().last().is_some_and(is_cjk) && b.chars().next().is_some_and(is_cjk) {
+            0.0
+        } else {
+            self.space()
+        }
     }
 
     fn ascent(&self) -> f32 {
-        self.fonts[0].as_scaled(self.scale).ascent()
+        self.fonts[0].font.as_scaled(self.scale).ascent()
     }
 
     fn line_height(&self) -> f32 {
-        let f = self.fonts[0].as_scaled(self.scale);
+        let f = self.fonts[0].font.as_scaled(self.scale);
         f.ascent() - f.descent()
     }
 
     /// Draw `text` with its baseline at `(x, y)` into an alpha coverage buffer.
     fn draw(&self, text: &str, x: f32, y: f32, cov: &mut [f32], w: usize, h: usize) {
-        let mut pen = x;
-        let mut prev: Option<(usize, ab_glyph::GlyphId)> = None;
-        for c in text.chars() {
-            let fi = self.font_for(c);
-            let font = &self.fonts[fi];
-            let f = font.as_scaled(self.scale);
-            let id = f.glyph_id(c);
-            if let Some((pfi, pid)) = prev {
-                if pfi == fi {
-                    pen += f.kern(pid, id);
-                }
-            }
-            let g: Glyph = id.with_scale_and_position(self.scale, ab_glyph::point(pen, y));
-            if let Some(o) = font.outline_glyph(g) {
+        for g in self.shape(text).0 {
+            let glyph: Glyph = g.id.with_scale_and_position(self.scale_for(g.face), ab_glyph::point(x + g.x, y + g.y));
+            if let Some(o) = g.face.font.outline_glyph(glyph) {
                 let b = o.px_bounds();
                 o.draw(|gx, gy, c| {
                     let px = b.min.x as i32 + gx as i32;
@@ -165,8 +332,6 @@ impl Shaper {
                     }
                 });
             }
-            pen += f.h_advance(id);
-            prev = Some((fi, id));
         }
     }
 }
@@ -194,11 +359,14 @@ pub fn rasterize_caption(c: &CaptionText) -> Option<TextImage> {
     if fonts.is_empty() {
         return None;
     }
+    // a right-to-left line (Arabic) runs from the right: its words are placed in reverse
+    let rtl = line_is_rtl(visible.iter().map(|w| w.text.as_str()));
+    let visible: Vec<&TextWord> = if rtl { visible.into_iter().rev().collect() } else { visible };
     let mut shaper = Shaper { fonts, scale: PxScale::from(c.size_px) };
     let measure = |s: &Shaper| -> (Vec<f32>, f32) {
         let widths: Vec<f32> = visible.iter().map(|w| s.word_width(&w.text)).collect();
-        let total = widths.iter().sum::<f32>() + s.space() * (widths.len().saturating_sub(1)) as f32;
-        (widths, total)
+        let gaps: f32 = visible.windows(2).map(|p| s.gap(&p[0].text, &p[1].text)).sum();
+        (widths.clone(), widths.iter().sum::<f32>() + gaps)
     };
     let (mut widths, mut text_w) = measure(&shaper);
     let pad_x = c.size_px * 0.45;
@@ -215,19 +383,19 @@ pub fn rasterize_caption(c: &CaptionText) -> Option<TextImage> {
     let h = (line_h + 2.0 * pad_y + size * 0.35).ceil().max(1.0) as usize; // room for the slide
     let box_h = line_h + 2.0 * pad_y;
 
-    // background box: up to the last revealed word, or the whole line
-    let space = shaper.space();
+    // background box: up to the last revealed word, or the whole line (always, right to left)
+    let box_to_revealed = c.box_to_revealed && !rtl;
     let mut x = pad_x;
     let mut box_right = pad_x;
     let mut placed = vec![];
-    for (word, ww) in visible.iter().zip(&widths) {
-        if word.alpha > 0.0 || !c.box_to_revealed {
+    for (i, (word, ww)) in visible.iter().zip(&widths).enumerate() {
+        if word.alpha > 0.0 || !box_to_revealed {
             box_right = x + ww;
         }
         placed.push((x, *word));
-        x += ww + space;
+        x += ww + visible.get(i + 1).map_or(0.0, |next| shaper.gap(&word.text, &next.text));
     }
-    let box_right = if c.box_to_revealed { box_right + pad_x } else { w as f32 };
+    let box_right = if box_to_revealed { box_right + pad_x } else { w as f32 };
     let radius = (box_h * 0.22).min(size * 0.35);
     let mut rgba = vec![0u8; w * h * 4];
     let bg = c.background;
@@ -379,7 +547,7 @@ pub fn rasterize_title(t: &TitleText) -> Option<TextImage> {
     if fonts.is_empty() {
         return None;
     }
-    let title = Shaper { fonts: fonts.clone(), scale: PxScale::from(t.size_px) };
+    let title = Shaper { fonts, scale: PxScale::from(t.size_px) };
     let sub = Shaper { fonts, scale: PxScale::from(t.size_px * SUBTITLE_SCALE) };
     let max_w = t.max_width_px.max(t.size_px * 2.0);
 
@@ -457,11 +625,14 @@ pub fn rasterize_title(t: &TitleText) -> Option<TextImage> {
             }
         }
     };
+    // right-to-left text (Arabic) runs from the right of each line
+    let rtl = line_is_rtl(t.words.iter().map(|w| w.text.as_str()));
     let mut y = pad;
     for (line, lw) in &lines {
         let base = y + (title_lh - title.line_height()) / 2.0 + title.ascent();
         for (i, wx) in line {
             let word = &t.words[*i];
+            let wx = if rtl { lw - wx - title.word_width(&word.text) } else { *wx };
             put(&title, &word.text, line_x(*lw) + wx, base, if word.accent { t.accent } else { t.color }, word.alpha, word.blur_px);
         }
         y += title_lh;
@@ -530,7 +701,7 @@ pub fn rasterize_keys(k: &KeyCaps) -> Option<TextImage> {
     }
     // the glyphs take a bit over half the cap height
     let layout = |cap_h: f32| {
-        let shaper = Shaper { fonts: fonts.clone(), scale: PxScale::from(cap_h * 0.52) };
+        let shaper = Shaper { fonts, scale: PxScale::from(cap_h * 0.52) };
         let pad = cap_h * 0.3;
         let gap = cap_h * 0.16;
         let caps: Vec<f32> = k.keys.iter().map(|t| (shaper.word_width(t) + 2.0 * pad).max(cap_h)).collect();
@@ -646,6 +817,73 @@ mod tests {
         let img = rasterize_caption(&c).unwrap();
         assert!(img.width <= 121, "{}", img.width);
         assert!(ink(&img) > 20);
+    }
+
+    /// Pixels of `img` with text on them, for scripts the system may lack a font for: `None`
+    /// when no installed font has `probe` (the test then has nothing to check).
+    fn script_ink(words: &[&str], probe: char) -> Option<(TextImage, usize)> {
+        fallback(probe)?;
+        let c = caption(&words.iter().map(|w| (*w, true, 1.0)).collect::<Vec<_>>(), false);
+        let img = rasterize_caption(&c).unwrap();
+        let n = ink(&img);
+        Some((img, n))
+    }
+
+    #[test]
+    fn hindi_arabic_and_cjk_are_drawn_with_a_system_font() {
+        for (words, probe) in [(&["नमस्ते", "दुनिया"][..], 'न'), (&["مرحبا", "بالعالم"][..], 'م'), (&["你好", "世界"][..], '你'), (&["こんにちは"][..], 'こ'), (&["안녕하세요"][..], '안')] {
+            match script_ink(words, probe) {
+                Some((_, n)) => assert!(n > 200, "{words:?}: {n} text pixels"),
+                None => eprintln!("no installed font has {probe}; skipped"),
+            }
+        }
+    }
+
+    #[test]
+    fn devanagari_is_shaped_into_conjuncts() {
+        // क्ष is one conjunct glyph when shaped, three letters' worth of width when not
+        let Some(face) = fallback('क') else { return };
+        let s = Shaper { fonts: FontFamily::Sans.fonts(), scale: PxScale::from(40.0) };
+        let (glyphs, _) = s.shape("क्ष");
+        assert!(glyphs.len() < 3, "{} glyphs", glyphs.len());
+        assert!(glyphs.iter().all(|g| std::ptr::eq(g.face, face)));
+    }
+
+    #[test]
+    fn the_first_arabic_word_sits_on_the_right() {
+        let red = |p: &[u8]| p[3] > 200 && p[0] > 180 && p[1] < 120;
+        let halves = |img: &TextImage| {
+            img.rgba.chunks_exact(4).enumerate().filter(|(_, p)| red(p)).fold((0, 0), |(l, r), (i, _)| if i % img.width as usize > img.width as usize / 2 { (l, r + 1) } else { (l + 1, r) })
+        };
+        if fallback('م').is_none() {
+            return;
+        }
+        // a caption: the first (spoken) word highlighted
+        let mut c = caption(&[("مرحبا", true, 1.0), ("بالعالم", true, 1.0), ("الجميل", true, 1.0)], false);
+        c.highlight = Color::from_hex("#fa4a32").unwrap();
+        c.words[0].highlighted = true;
+        let (l, r) = halves(&rasterize_caption(&c).unwrap());
+        assert!(r > 50 && l < r / 10, "caption: red left {l}, right {r}");
+        // a wrapped block of text: the first word in the accent colour
+        let mut t = title(&[("مرحبا", true, 0), ("بالعالم", false, 0), ("الجميل", false, 0)]);
+        t.accent = Color::from_hex("#fa4a32").unwrap();
+        t.align = Align::Right;
+        let (l, r) = halves(&rasterize_title(&t).unwrap());
+        assert!(r > 50 && l < r / 10, "title: red left {l}, right {r}");
+    }
+
+    #[test]
+    fn scripts_that_need_shaping_are_told_apart() {
+        assert!(needs_shaping("नमस्ते") && needs_shaping("مرحبا") && needs_shaping("Hi नमस्ते"));
+        assert!(!needs_shaping("Hello, мир") && !needs_shaping("你好") && !needs_shaping("안녕"));
+    }
+
+    #[test]
+    fn chinese_words_get_no_space_and_arabic_lines_run_right_to_left() {
+        let s = Shaper { fonts: FontFamily::Sans.fonts(), scale: PxScale::from(40.0) };
+        assert_eq!(s.gap("你好", "世界"), 0.0);
+        assert!(s.gap("Hello", "world") > 0.0 && s.gap("你好", "world") > 0.0);
+        assert!(line_is_rtl(["مرحبا", "بالعالم"]) && !line_is_rtl(["Hello", "مرحبا"]));
     }
 
     #[test]

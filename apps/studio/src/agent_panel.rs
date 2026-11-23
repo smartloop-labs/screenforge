@@ -74,6 +74,16 @@ impl StudioHost {
             "favoriteMusic": favorites.iter().map(track_value).collect::<Vec<_>>(),
             // the user's own voices, made on this computer, by the names they gave them
             "myVoices": crate::my_voice::list().iter().map(|v| json!({ "voice": v.id, "name": v.name })).collect::<Vec<_>>(),
+            // ElevenLabs voices beyond the built-in eight (native speakers of other languages),
+            // and the language narration is in (absent: English)
+            "cloudVoices": sf_tts::cloud::cloud_voices().iter().filter(|v| sf_agent::host::VOICES.iter().all(|(id, _)| *id != v.id)).map(|v| json!({ "voice": v.id, "name": v.name, "female": v.female, "style": v.style, "language": v.language }))
+                // the user's own voice cloned by ElevenLabs
+                .chain(sf_tts::cloud::studio().map(|v| json!({ "voice": v.id, "name": format!("{} (studio quality)", v.name), "style": v.style, "studio": true })))
+                .collect::<Vec<_>>(),
+            "narrationLanguage": ed.session.pkg.project.config.audio.narration_language(),
+            // the narrator the user selected in the Narration panel: add_narration reads with it
+            // when no voice is given
+            "narrationVoice": ed.session.pkg.project.config.audio.narration_voice.as_deref().map(|v| json!({ "voice": v, "name": if sf_tts::clone::is_my_voice(v) { crate::my_voice::name(v) } else { sf_tts::voice_name(v).unwrap_or(v).to_string() } })),
             "cursorSets": sf_session::cursor_sets::SETS.iter().map(|(id, label)| json!({ "id": id, "label": label })).collect::<Vec<_>>(),
             "cameraLooks": looks,
             "presets": presets.iter().map(|(n, _)| n).collect::<Vec<_>>(),
@@ -246,8 +256,8 @@ impl Host for StudioHost {
         Ok(name)
     }
 
-    fn speak(&self, text: &str, voice: &str, speed: f64) -> Result<sf_agent::host::Spoken, String> {
-        crate::narration::speak_into(&self.project_dir, text, voice, speed)
+    fn speak(&self, text: &str, voice: &str, speed: f64, language: Option<&str>) -> Result<sf_agent::host::Spoken, String> {
+        crate::narration::speak_into(&self.project_dir, text, voice, speed, language)
     }
 
     fn import_media(&self, path: &str) -> Result<sf_project::tracks::MediaItem, String> {
@@ -377,6 +387,15 @@ fn editor_context(ed: &Editor) -> String {
         "nothing".into()
     };
     s.push_str(&format!(" Selected: {selected}."));
+    // the narrator add_narration reads with (it may have changed since earlier turns)
+    let audio = &ed.session.pkg.project.config.audio;
+    if let Some(v) = audio.narration_voice.as_deref() {
+        let name = if sf_tts::clone::is_my_voice(v) { crate::my_voice::name(v) } else { sf_tts::voice_name(v).unwrap_or(v).to_string() };
+        // a native narrator's language, else the panel's
+        let code = sf_tts::cloud::cloud_voice(v).and_then(|c| c.language).or(audio.narration_language());
+        let lang = code.map_or("English", |l| sf_tts::cloud::language(l).map_or(l, |x| x.name));
+        s.push_str(&format!(" Narration panel narrator: {name} ({v}), narrating in {lang}; add_narration uses it when no voice is given. Write narration text in {lang}."));
+    }
     s
 }
 
@@ -964,6 +983,7 @@ impl AgentPanel {
             host: Some(Arc::new(StudioHost::new(ed, ctx))),
             actions: vec![],
             earlier: self.earlier.clone(),
+            user_text: String::new(),
         };
         let context = editor_context(ed);
         let (tx, rx) = mpsc::channel();
@@ -1158,11 +1178,11 @@ impl AgentPanel {
                     Entry::User(t) => {
                         egui::Frame::NONE.fill(pal.card_3).corner_radius(CornerRadius::same(widgets::BUTTON_RADIUS)).inner_margin(egui::Margin::symmetric(10, 7)).show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.add(egui::Label::new(RichText::new(t).size(14.0).color(pal.text)).wrap());
+                            crate::shaped::label(ui, t, 14.0, pal.text);
                         });
                     }
                     Entry::Assistant(t) => {
-                        ui.add(egui::Label::new(RichText::new(t).size(14.0).color(pal.text)).wrap());
+                        crate::shaped::label(ui, t, 14.0, pal.text);
                     }
                     Entry::Step { text, failed } => {
                         ui.horizontal_wrapped(|ui| {
