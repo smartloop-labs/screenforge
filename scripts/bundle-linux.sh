@@ -10,13 +10,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
 ARCH_DEB=amd64; ARCH=x86_64
-cargo build --release -p studio
+cargo build --release -p studio -p sf-cli
 BIN=target/release/screenforge
 
 # portable folder: <dir>/screenforge + assets/ (the app finds assets next to its executable)
 DIR=target/linux/ScreenForge
 rm -rf target/linux && mkdir -p "$DIR"
 cp "$BIN" "$DIR/screenforge" && strip "$DIR/screenforge" || true
+# the command line tool and MCP server for agents (`screenforge-cli mcp`); `sf` is taken by the
+# Salesforce CLI on many machines, so it is linked onto the PATH as screenforge-cli
+cp target/release/sf "$DIR/sf" && strip "$DIR/sf" || true
 FFDIR=$(./scripts/fetch-ffmpeg.sh)
 cp "$FFDIR/ffmpeg" "$FFDIR/ffprobe" "$DIR/"
 cp "$FFDIR/LICENSE.txt" "$DIR/FFMPEG-LICENSE.txt"
@@ -37,7 +40,8 @@ DESK
 cat > "$DIR/README.txt" <<TXT
 ScreenForge $VERSION for Linux (x86_64)
 
-Run ./screenforge. ffmpeg and ffprobe are included (static GPL builds from
+Run ./screenforge. ./sf is the command line tool; `./sf mcp` is the MCP server that lets
+your own agent (Claude Code, Codex …) record and edit. ffmpeg and ffprobe are included (static GPL builds from
 https://github.com/BtbN/FFmpeg-Builds; see FFMPEG-LICENSE.txt).
 Recording works in X11 sessions; Wayland recording is not supported yet. Pick an "on Xorg"
 session at the login screen; GNOME 49 and later have none, so install an X11 desktop such as
@@ -53,6 +57,7 @@ mkdir -p "$ROOT/DEBIAN" "$ROOT/opt" "$ROOT/usr/bin" "$ROOT/usr/share/application
 cp -R "$DIR" "$ROOT/opt/screenforge"
 rm -f "$ROOT/opt/screenforge/README.txt"
 ln -s /opt/screenforge/screenforge "$ROOT/usr/bin/screenforge"
+ln -s /opt/screenforge/sf "$ROOT/usr/bin/screenforge-cli"
 mv "$ROOT/opt/screenforge/screenforge.desktop" "$ROOT/usr/share/applications/screenforge.desktop"
 mv "$ROOT/opt/screenforge/screenforge.png" "$ROOT/usr/share/icons/hicolor/256x256/apps/screenforge.png"
 SIZE=$(du -sk "$ROOT" | cut -f1)

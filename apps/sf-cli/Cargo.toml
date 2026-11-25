@@ -1,6 +1,6 @@
 [package]
 name = "sf-cli"
-description = "Command line tool: inspect, render frames and export .screenforge projects"
+description = "Command line tool: record, inspect, edit (MCP server), render frames and export .screenforge projects"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,6 +20,10 @@ sf-recording.workspace = true
 sf-export.workspace = true
 sf-license.workspace = true
 sf-transcribe.workspace = true
+sf-agent.workspace = true
+sf-tts.workspace = true
+base64 = "0.22"
+directories.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true

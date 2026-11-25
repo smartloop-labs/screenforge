@@ -18,7 +18,8 @@ fn find(bin: &str, env: &str) -> Option<PathBuf> {
         }
     }
     let file = format!("{bin}{}", std::env::consts::EXE_SUFFIX);
-    if let Ok(exe) = std::env::current_exe() {
+    // through a symlink (Homebrew's screenforge-cli), look next to the real file
+    if let Ok(exe) = std::env::current_exe().map(|e| std::fs::canonicalize(&e).unwrap_or(e)) {
         if let Some(dir) = exe.parent() {
             for rel in ["", "../Resources/bin/", "bin/",
                 // `cargo run` from the repo: the static build scripts/fetch-ffmpeg.sh downloads

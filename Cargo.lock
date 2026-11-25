@@ -4690,10 +4690,13 @@ name = "sf-cli"
 version = "0.1.65"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
+ "directories",
  "image",
  "serde_json",
+ "sf-agent",
  "sf-engine",
  "sf-export",
  "sf-license",
@@ -4703,6 +4706,7 @@ dependencies = [
  "sf-render",
  "sf-session",
  "sf-transcribe",
+ "sf-tts",
  "tempfile",
  "tracing",
  "tracing-subscriber",
