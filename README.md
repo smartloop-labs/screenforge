@@ -32,13 +32,13 @@ hand. Projects are saved as `.screenforge` packages.
   stops the agent and keeps your edit. Models: Sonnet 5.5 (default), Opus 5.5 or Haiku 5.5.
 - **AI voice narration**: type a script and Kokoro-82M reads it into a voice-over take, on your
   computer (six voices, adjustable speed), or pick one of eight studio-quality ElevenLabs voices,
-  read online and paid from the Pro credits. The agent can write and place narration too, and
+  read online and free for everyone. The agent can write and place narration too, and
   uses ElevenLabs (Eric) when asked for a more realistic voice.
-- **Enhance a recorded voice-over** with ElevenLabs (Pro credits): *Clean up* takes out
+- **Enhance a recorded voice-over** with ElevenLabs (free): *Clean up* takes out
   background noise, echo and hum, or *Re-voice* says it in a studio voice. Your timing,
   delivery and accent stay, captions stay in place, and the recording is kept to go back to.
 - **My voice**: ElevenLabs clones your own voice from about a minute of voice-over you
-  recorded (Pro, with your consent), so narration, the agent and Re-voice speak in your voice
+  recorded (free, with your consent), so narration, the agent and Re-voice speak in your voice
   and accent. Delete it any time.
 - **Automatic captions**: on-device Whisper transcription of the microphone and recorded
   voice-overs; narrated takes carry their exact words. Styled captions in preview and export,
@@ -59,7 +59,7 @@ hand. Projects are saved as `.screenforge` packages.
 
 ## Async video and Loom
 
-- **Share links** (Pro) make ScreenForge an async video tool: Export uploads the video and lists
+- **Share links** (free, no sign-in) make ScreenForge an async video tool: Export uploads the video and lists
   the page link, the MP4, Markdown with the poster (GitHub, Notion) and an HTML embed, each with
   a copy button. Exporting again keeps the same link.
 - **Import from Loom**: paste a `loom.com/share/…` link in the New project window (or run

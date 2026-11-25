@@ -4,15 +4,15 @@
 //   "revoice" — Voice Changer: the same performance in one of the ElevenLabs voices (VOICES,
 //               or "my_voice": a clean studio version of the user's own), with the
 //               background noise taken out too.
-// { device, mode, voice?, audio: base64 WAV (16-bit PCM mono) } → { audio: base64 MP3, credits, sf_credits }
+// { device, mode, voice?, audio: base64 WAV (16-bit PCM mono) } → { audio: base64 MP3 }
 //
 // The app sends a take in pieces of a minute or less (split where it is quiet), so a request
 // stays small and well inside ElevenLabs' 5-minute limit; it puts the pieces back together.
-// Paid in agent credits like the narration voices (see _shared/elevenlabs.ts): ElevenLabs bills
-// both by audio length (1,000 characters a minute), and so does this, by the WAV's length.
+// Free like the narration voices (see _shared/elevenlabs.ts): ElevenLabs bills both by audio
+// length (1,000 characters a minute), and that is counted towards the computer's daily allowance.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { decode, encode } from "https://deno.land/std@0.190.0/encoding/base64.ts";
-import { charge, cors, elevenLabsFailed, fail, gate, isDevice, isVoice, json, summary, voiceIdFor, wavSeconds } from "../_shared/elevenlabs.ts";
+import { cors, count, elevenLabsFailed, fail, gate, isDevice, isVoice, json, voiceIdFor, wavSeconds } from "../_shared/elevenlabs.ts";
 
 /** Voice Changer model: multilingual (29 languages) keeps accents better than the English one. */
 const STS_MODEL = Deno.env.get("ELEVENLABS_STS_MODEL") ?? "eleven_multilingual_sts_v2";
@@ -46,7 +46,7 @@ serve(async (req) => {
   const { db, payer } = gated;
   let voiceId: string | undefined;
   if (mode === "revoice") {
-    const id = await voiceIdFor(db, payer, voice);
+    const id = await voiceIdFor(db, payer, device, voice);
     if (id instanceof Response) return id;
     voiceId = id;
   }
@@ -68,7 +68,6 @@ serve(async (req) => {
   if (!r || !r.ok) return elevenLabsFailed(r, mode === "clean" ? "clean up the voice-over" : "re-voice the voice-over");
   const mp3 = await r.arrayBuffer();
 
-  const usd = (seconds / 60) * USD_PER_MINUTE;
-  const credits = await charge(db, device, payer, usd, `voice-enhance:${r.headers.get("request-id") ?? crypto.randomUUID()}`);
-  return json({ audio: encode(mp3), credits, sf_credits: summary(payer) });
+  await count(db, device, (seconds / 60) * USD_PER_MINUTE);
+  return json({ audio: encode(mp3) });
 });

@@ -1124,9 +1124,6 @@ fn voice_over_item_ui(ed: &mut Editor, ui: &mut egui::Ui) {
     enhance_take_ui(ed, ui, &id, span.output_end_ms - span.output_start_ms);
 }
 
-/// Why ElevenLabs cannot enhance a voice-over here.
-const ENHANCE_LOCKED_TIP: &str = "Upgrade to Pro to enhance voice-overs with ElevenLabs";
-
 /// A recorded take: cleaned up or re-voiced by ElevenLabs, keeping the speaker's timing,
 /// delivery and accent; or back to the recording.
 fn enhance_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str, take_ms: f64) {
@@ -1156,14 +1153,13 @@ fn enhance_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str, take_ms: f64) {
         });
     }
     let busy = ed.enhance.is_running();
-    let locked = crate::narration::cloud_locked();
     // Clean up or Re-voice, and the voice picked to re-voice in, for this take
     let mode_id = ui.id().with(("enhance_mode", id));
     let (mut revoice, mut voice): (bool, String) = ui.data(|d| d.get_temp(mode_id)).unwrap_or_else(|| match enhanced.as_deref().and_then(sf_tts::cloud::cloud_voice) {
         Some(c) => (true, c.id.to_string()),
         None => (false, sf_tts::cloud::cloud_voices()[0].id.to_string()),
     });
-    ui.add_enabled_ui(!busy && !locked, |ui| {
+    ui.add_enabled_ui(!busy, |ui| {
         if let Some(i) = widgets::segmented(ui, revoice as usize, &["Clean up", "Re-voice"]) {
             revoice = i == 1;
         }
@@ -1190,9 +1186,9 @@ fn enhance_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str, take_ms: f64) {
     };
     let same = enhanced.as_deref() == Some(if revoice { voice.as_str() } else { "clean" });
     ui.add_space(4.0);
-    ui.add_enabled_ui(!busy && !locked && !same, |ui| {
-        let tip = format!("About {:.0} credits ({}): ElevenLabs bills by length", crate::enhance::credits_for(file_ms).ceil().max(1.0), crate::editor::fmt_clock(file_ms));
-        let disabled_tip = if locked { ENHANCE_LOCKED_TIP } else if same { "This take already sounds like this" } else { "ElevenLabs is working on a voice-over" };
+    ui.add_enabled_ui(!busy && !same, |ui| {
+        let tip = format!("ElevenLabs works on the whole take ({}), online", crate::editor::fmt_clock(file_ms));
+        let disabled_tip = if same { "This take already sounds like this" } else { "ElevenLabs is working on a voice-over" };
         if widgets::accent_button(ui, &label).on_hover_text(tip).on_disabled_hover_text(disabled_tip).clicked() {
             ed.enhance_voice_over(id, mode);
         }
@@ -1232,8 +1228,6 @@ fn spoken_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str) {
             read = Some((v.to_string(), text.clone()));
         }
     });
-    // an ElevenLabs take without Pro: read again only by picking a voice on this computer
-    let locked = crate::narration::cloud_locked() && sf_tts::cloud::cloud_voice(&voice).is_some();
     widgets::title(ui, "Script");
     if ed.narration.take_draft.as_ref().is_none_or(|(d, _)| d != id) {
         ed.narration.take_draft = Some((id.to_string(), text.clone()));
@@ -1242,8 +1236,8 @@ fn spoken_take_ui(ed: &mut Editor, ui: &mut egui::Ui, id: &str) {
         script_box(ui, draft, "What the voice says");
         let changed = draft.trim() != text.trim() && !draft.trim().is_empty();
         let draft = draft.clone();
-        ui.add_enabled_ui(changed && !busy && !locked, |ui| {
-            if widgets::accent_button(ui, "Read again").on_hover_text("Replace this take with the new script, in the same place").on_disabled_hover_text(if locked { CLOUD_LOCKED_TIP } else { "Change the script to read it again" }).clicked() {
+        ui.add_enabled_ui(changed && !busy, |ui| {
+            if widgets::accent_button(ui, "Read again").on_hover_text("Replace this take with the new script, in the same place").on_disabled_hover_text("Change the script to read it again").clicked() {
                 read = Some((voice.clone(), draft));
             }
         });
@@ -1296,26 +1290,20 @@ fn language_combo(ui: &mut egui::Ui, current: Option<&str>) -> Option<&'static s
     picked
 }
 
-/// Why the ElevenLabs voices cannot be chosen.
-const CLOUD_LOCKED_TIP: &str = "Upgrade to Pro for ElevenLabs' studio-quality voices";
-
 /// The AI voices: which engine (on this computer, or ElevenLabs), then that engine's voices in
 /// two rows, male and female. Returns the voice picked. Switching engine picks its first voice
 /// when `pick_on_switch` (the panel's voice, nothing is read); otherwise (a take, where a pick
-/// reads it again) it only shows the other engine's voices until one is picked. Without Pro,
-/// ElevenLabs is greyed out and the voices on this computer are shown. `own_voices` adds the
+/// reads it again) it only shows the other engine's voices until one is picked. `own_voices` adds the
 /// user's own voices on this computer (the panel shows them itself, with Add a voice).
 /// ElevenLabs' voices are those for narration in `language` (`None`: English): its native
 /// speakers first, then the voices for every language.
 fn voice_picker(ui: &mut egui::Ui, id_salt: &str, current: &str, pick_on_switch: bool, own_voices: bool, language: Option<&str>) -> Option<String> {
     let id = ui.id().with(("voice_engine", id_salt));
-    let locked = crate::narration::cloud_locked();
     let current_online = sf_tts::cloud::cloud_voice(current).is_some();
     // the engine shown: the current voice's, unless switched here without picking yet
     let shown: Option<(String, bool)> = ui.data(|d| d.get_temp(id));
-    let online = !locked && shown.filter(|(v, _)| v == current).map_or(current_online, |(_, o)| o);
-    let disabled: &[usize] = if locked { &[1] } else { &[] };
-    if let Some(i) = widgets::segmented_with_tip(ui, online as usize, &["On this computer", "ElevenLabs"], disabled, CLOUD_LOCKED_TIP) {
+    let online = shown.filter(|(v, _)| v == current).map_or(current_online, |(_, o)| o);
+    if let Some(i) = widgets::segmented(ui, online as usize, &["On this computer", "ElevenLabs"]) {
         let online = i == 1;
         ui.data_mut(|d| d.insert_temp(id, (current.to_string(), online)));
         return pick_on_switch.then(|| if online { sf_tts::cloud::default_voice(language).id } else { sf_tts::DEFAULT_VOICE }.to_string());
@@ -1497,7 +1485,7 @@ fn studio_ui(ed: &mut Editor, ui: &mut egui::Ui, v: &crate::my_voice::VoiceClone
             widgets::hint(ui, "ElevenLabs is working on your studio voice…");
         });
     } else if made {
-        widgets::hint(ui, &format!("ElevenLabs made a more realistic version of {}. It reads online, about 8 credits per 1,000 characters, and is under ElevenLabs → Yours.", v.name));
+        widgets::hint(ui, &format!("ElevenLabs made a more realistic version of {}. It reads online and is under ElevenLabs → Yours.", v.name));
         ui.horizontal(|ui| {
             if widgets::accent_button(ui, "Use studio version").clicked() {
                 out = Some(sf_tts::cloud::STUDIO.to_string());
@@ -1508,7 +1496,7 @@ fn studio_ui(ed: &mut Editor, ui: &mut egui::Ui, v: &crate::my_voice::VoiceClone
         });
     } else {
         let replaces = sf_tts::cloud::studio().map(|s| format!(" It replaces your studio version {}.", s.name)).unwrap_or_default();
-        widgets::hint(ui, &format!("ElevenLabs can make a more realistic version of {} from its recordings, which are uploaded to ElevenLabs. Making it confirms this is your own voice and that you agree to ElevenLabs cloning it for your narration. Reading in it costs credits like the other ElevenLabs voices.{replaces}", v.name));
+        widgets::hint(ui, &format!("ElevenLabs can make a more realistic version of {} from its recordings, which are uploaded to ElevenLabs. Making it confirms this is your own voice and that you agree to ElevenLabs cloning it for your narration.{replaces}", v.name));
         if widgets::secondary_button(ui, "Make studio version").on_hover_text("This is my own voice, and I agree to ElevenLabs making a clone of it for my narration").clicked() {
             ed.my_voice.make_studio(&v.id);
         }
@@ -1855,11 +1843,10 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
 
     // ── engine and voice ──
     let audio = &ed.session.pkg.project.config.audio;
-    // without Pro an ElevenLabs voice chosen earlier gives way to the default one here
     let voice = audio
         .narration_voice
         .clone()
-        .filter(|v| sf_tts::voice(v).is_some() || (sf_tts::clone::is_my_voice(v) && crate::my_voice::get(v).is_some()) || (sf_tts::cloud::cloud_voice(v).is_some() && !crate::narration::cloud_locked()))
+        .filter(|v| sf_tts::voice(v).is_some() || (sf_tts::clone::is_my_voice(v) && crate::my_voice::get(v).is_some()) || sf_tts::cloud::cloud_voice(v).is_some())
         .unwrap_or_else(|| sf_tts::DEFAULT_VOICE.to_string());
     let online = sf_tts::cloud::cloud_voice(&voice);
     let speed = audio.narration_speed();
@@ -1904,7 +1891,7 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
     }
     ui.add_space(4.0);
     match online {
-        Some(v) => widgets::hint(ui, &format!("{}, {}. Studio quality, read online: about 8 credits per 1,000 characters (around 7 a minute), from the credits you share with the agent.", v.name, v.style)),
+        Some(v) => widgets::hint(ui, &format!("{}, {}. Studio quality, read online.", v.name, v.style)),
         None if sf_tts::clone::is_my_voice(&voice) => widgets::hint(ui, &format!("{}: your own voice, free and private, read on this computer by Chatterbox Turbo.", crate::my_voice::name(&voice))),
         None => widgets::hint(ui, "Free and private: read on this computer, works offline."),
     }
@@ -1956,10 +1943,7 @@ fn narration_ui(ed: &mut Editor, ui: &mut egui::Ui) {
     let can = !ed.narration.draft.trim().is_empty() && work.is_none();
     let at = ed.playhead_ms;
     ui.add_enabled_ui(can, |ui| {
-        let tip = match online {
-            Some(_) => format!("Read the script into a voice-over take starting at the playhead (about {:.0} credits)", sf_tts::cloud::credits_for(ed.narration.draft.trim().chars().count()).ceil()),
-            None => "Read the script into a voice-over take starting at the playhead".to_string(),
-        };
+        let tip = "Read the script into a voice-over take starting at the playhead";
         if widgets::accent_button(ui, &format!("Add at {}", crate::editor::fmt_clock(at))).on_hover_text(tip).clicked() {
             let source_ms = ed.session.timeline.output_to_source(at).unwrap_or(0.0);
             let req = crate::narration::TakeRequest { text: ed.narration.draft.trim().to_string(), voice: voice.clone(), speed, language: language.clone(), replaces: None, source_ms };

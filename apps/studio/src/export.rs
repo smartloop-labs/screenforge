@@ -95,7 +95,7 @@ pub struct ExportDialog {
     pub last_link: Option<Result<crate::share::Shared, String>>,
     /// The last export's title, description and tags (also in `<name>.details.txt`).
     details: Option<sf_engine::details::Details>,
-    /// "Make a share link too": Export uploads what it wrote (Pro; `share::with_export_enabled`).
+    /// "Make a share link too": Export uploads what it wrote (`share::with_export_enabled`).
     share_with_export: bool,
     /// The running or finished export makes a link too: step 2 of the progress dialog.
     export_shared: bool,
@@ -649,18 +649,11 @@ impl ExportDialog {
         self.last_link.clone().and_then(Result::ok).map(|s| s.url)
     }
 
-    /// Cloud share links (Pro): made by Export with "Make a share link too"; others see what
-    /// it is.
+    /// Cloud share links: made by Export with "Make a share link too".
     fn share_ui(&mut self, ui: &mut egui::Ui) {
-        let pal = theme::p();
         widgets::title(ui, "Share link");
         if !crate::share::allowed() {
-            widgets::hint(ui, "Pro uploads your export and puts a link on your clipboard, ready to paste anywhere.");
-            ui.add_space(2.0);
-            let opening = self.checkout.is_some();
-            if ui.add_enabled(!opening, egui::Link::new(RichText::new(format!("Get Pro · {}", sf_license::PRICE_PRO)).color(pal.accent))).clicked() {
-                self.buy("pro");
-            }
+            widgets::hint(ui, "ScreenForge cannot identify this computer, so it cannot make share links here.");
             ui.add_space(4.0);
             ui.separator();
             return;

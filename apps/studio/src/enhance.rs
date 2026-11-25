@@ -1,5 +1,5 @@
 //! Enhancing a recorded voice-over with ElevenLabs, through the backend's `voice-enhance`
-//! function (which holds the key and charges credits), off the UI thread. Either way the user's
+//! function (which holds the key; free, within a daily allowance), off the UI thread. Either way the user's
 //! own timing, delivery and accent stay:
 //! - **Clean up** (Voice Isolator): background noise, echo and hum taken out, still their voice.
 //! - **Re-voice** (Voice Changer): the same performance in one of the ElevenLabs voices.
@@ -29,10 +29,6 @@ const SEARCH_MS: f64 = 12_000.0;
 const MIN_PIECE_MS: f64 = 8_000.0;
 /// Fade at each join, at a quiet spot anyway, so pieces never click against each other.
 const JOIN_FADE_MS: f64 = 5.0;
-
-/// Credits a minute of audio costs (ElevenLabs bills 1,000 characters a minute: US$0.08 at
-/// 1 credit = US$0.01); the backend charges what it is set to, this is for the panel.
-pub const CREDITS_PER_MINUTE: f64 = 8.0;
 
 /// What to do with the voice-over.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,7 +203,6 @@ fn enhance_piece(samples: &[f32], mode: &Mode) -> Result<Vec<f32>, String> {
     } else {
         sf_license::call_backend_within("voice-enhance", body, 240)?
     };
-    crate::narration::note_credits(&reply);
     let mp3 = base64::engine::general_purpose::STANDARD.decode(reply["audio"].as_str().ok_or("ElevenLabs returned no audio")?).map_err(|e| e.to_string())?;
     let tmp = std::env::temp_dir().join(format!("screenforge-enhance-{}-{}.mp3", std::process::id(), chrono::Local::now().format("%H%M%S%3f")));
     std::fs::write(&tmp, mp3).map_err(|e| e.to_string())?;
@@ -256,10 +251,6 @@ fn fade(piece: &mut [f32], in_: bool) {
     }
 }
 
-/// Credits enhancing `ms` of audio costs, for the button.
-pub fn credits_for(ms: f64) -> f64 {
-    ms / 60_000.0 * CREDITS_PER_MINUTE
-}
 
 #[cfg(test)]
 mod tests {

@@ -182,9 +182,9 @@ offers **Switch account**, **Sign out** and, for Pro, **Manage subscription**:
   goes; default the pricing page).
 
 
-## Cloud share links (Pro)
+## Cloud share links (free)
 
-With Export → "Make a share link too" checked (Pro; remembered in `share-with-export` in the
+With Export → "Make a share link too" checked (free for every computer, no sign-in; remembered in `share-with-export` in the
 app's config folder), each export is uploaded once it is written and a
 `https://screenforge.studio/s/<id>` link goes on the clipboard with a desktop notification. An
 H.264 MP4 export goes up as it is; a GIF, ProRes or VP9 one is rendered again as MP4 for the link.
@@ -206,14 +206,16 @@ the server).
 
 - Setup: `backend/setup-share.sh` (bucket, public domain, migration
   `20261113000000_share_links.sql`, secrets, deploy). The page deploys with the site.
-- Who: `create` needs an active Pro license or a staff email (`proOrStaff`, as the agent).
-  `list` and `delete` only need the owner, so links can still be removed after Pro ends.
-- Owner requests carry the computer's license key as well as its device id: the function
-  checks the key's signature, that it is bound to that device, and that the device is still
-  the license's active computer. A device id alone (not secret) is not enough.
+- Who: every computer. A link belongs to the export's computer; `sf mcp`'s `export` makes one
+  for each MP4 it writes and returns it.
+- Owner: requests carry the device id and, when the computer is signed in, its license key.
+  With a key (signature checked, bound to that device, the device still the license's active
+  computer) the links are the license's; without one they are the computer's own
+  (`device:<id>` in `share_links.email`). Device ids are not secrets: whoever knows one can
+  list and delete that computer's own links, never a license's.
 - Limits: `SHARE_MAX_BYTES` per video (default 2 GiB; Content-Length is signed into the upload
   URL, and `complete` checks the stored size), `SHARE_MAX_ACCOUNT_BYTES` per account (default
-  100 GiB). Uploads not completed within a day are removed on the owner's next `create`.
+  100 GiB), `SHARE_MAX_DEVICE_BYTES` per computer without a license (default 10 GiB). Uploads not completed within a day are removed on the owner's next `create`.
 - Links are unlisted: 12 random base62 characters, `noindex` on the page. Views are counted
   by the page (`share_view`). Deleting a link removes both R2 objects and the row.
 
@@ -228,21 +230,21 @@ supabase secrets set ELEVENLABS_API_KEY=<key>
 supabase functions deploy voice
 ```
 
-`{ device, voice, text, speed }` returns `{ audio, alignment, credits, sf_credits }`: 16-bit PCM
+`{ device, voice, text, speed }` returns `{ audio, alignment }`: 16-bit PCM
 at 24 kHz (base64) and ElevenLabs' character timing, which the app turns into word timing for
 captions. `voice` is the app's id (`el_brian` …); the ElevenLabs voice ids are kept in the
 function (premade voices, so any workspace has them) and can change without an app release.
 A take is at most 5,000 characters.
 
-Credits. A reading is paid like an agent request, from the same balance (Pro's monthly credits,
-then top-ups): it needs Pro (or staff / trial credits) and a positive balance, and costs
-ElevenLabs' list price for its characters at 1 credit = US$0.01. `eleven_v4` is US$0.08 per 1,000
-characters, so 8 credits per 1,000, about 7 credits for a minute of narration; 1,000 monthly
-credits cover roughly two hours of narration if nothing else is spent. Packs keep the same
-50% margin as for Claude. Set `ELEVENLABS_MODEL` / `ELEVENLABS_USD_PER_1K_CHARS` together to
-change model (v4 Turbo: `eleven_v4_turbo`, 0.04). Its cost also counts toward the agent's
-daily caps (`AGENT_DEVICE_DAILY_USD`, `AGENT_TOTAL_DAILY_USD`). The app keeps each voice's
-preview in its cache folder, so a preview is charged once.
+Free for everyone. A reading needs no license and takes no credits (credits pay for the agent
+only). What it costs us, ElevenLabs' list price for its characters (`eleven_v4` is US$0.08 per
+1,000, about 7 cents for a minute of narration), is counted per computer and day in
+`voice_usage` (migration `20261125000000`, `supabase db push` before deploying), and the daily
+caps on that are the only limit: `ELEVENLABS_DEVICE_DAILY_USD` per computer (default 1, about a
+quarter of an hour of narration) and `ELEVENLABS_TOTAL_DAILY_USD` for everyone together
+(default 20); 0 turns a cap off. They are apart from the agent's caps. Set `ELEVENLABS_MODEL` /
+`ELEVENLABS_USD_PER_1K_CHARS` together to change model (v4 Turbo: `eleven_v4_turbo`, 0.04).
+The app keeps each voice's preview in its cache folder, so a preview is counted once.
 
 ### Enhancing a recorded voice-over
 
@@ -250,7 +252,7 @@ preview in its cache folder, so a preview is charged once.
 delivery and accent: `{ device, mode, voice?, audio }`, where `mode` is `clean` (ElevenLabs'
 Voice Isolator: noise, echo and hum taken out, still their voice) or `revoice` (Voice Changer,
 `eleven_multilingual_sts_v2`, into one of the same `VOICES`), and `audio` is a base64 WAV
-(16-bit PCM mono) of at most 120 s. It returns `{ audio: base64 MP3, credits, sf_credits }`.
+(16-bit PCM mono) of at most 120 s. It returns `{ audio: base64 MP3 }`.
 The app sends a take in pieces of about 40 s cut where it is quiet, and fits each answer to
 the length it sent, so the new file lines up with the recording. Same key, gate and caps as
 `voice` (both use `_shared/elevenlabs.ts`).
@@ -259,20 +261,20 @@ the length it sent, so the new file lines up with the recording. Same key, gate 
 supabase functions deploy voice-enhance
 ```
 
-ElevenLabs bills both by length, 1,000 characters a minute, so a minute costs US$0.08 here,
-8 credits (`ELEVENLABS_USD_PER_AUDIO_MINUTE`, measured from the WAV itself;
+ElevenLabs bills both by length, 1,000 characters a minute, so a minute counts as US$0.08 towards
+the day (`ELEVENLABS_USD_PER_AUDIO_MINUTE`, measured from the WAV itself;
 `ELEVENLABS_STS_MODEL` picks the Voice Changer model).
 
 ### My voice (the user's own voice)
 
-`my-voice` makes an ElevenLabs Instant Voice Clone of a Pro user's own voice from voice-overs
-they recorded, one per license email (`voice_clones`, migration `20261102000000`), after they
+`my-voice` makes an ElevenLabs Instant Voice Clone of a user's own voice from voice-overs
+they recorded, free, one per license email or per computer without a license (`voice_clones`, migration `20261102000000`), after they
 tick a consent box ("this is my own voice…", stored with the row). `{ device, action }`:
 `status` → `{ voice }`, `create` with `consent: true`, `samples` (base64 16-bit mono WAVs, 10 s to
 3 min in all) and `clean` (Voice Isolator first) → `{ voice }`, replacing an earlier clone;
 `delete` removes the clone at ElevenLabs and the row. The clone is named by a hash of the email,
 never the email. Making one is free (it takes one of the account's voice slots); speaking in it
-is paid like the other voices: `voice` and `voice-enhance` take `voice: "my_voice"` and look up
+counts towards the day like the other voices: `voice` and `voice-enhance` take `voice: "my_voice"` and look up
 the asker's clone.
 
 ```

@@ -9,7 +9,7 @@
 //! first and where they are published if that fails, and kept only if their
 //! SHA-256 matches.
 //!
-//! ElevenLabs voices ([`cloud`]) are offered beside Kokoro's: read online, paid in credits. The
+//! ElevenLabs voices ([`cloud`]) are offered beside Kokoro's: read online, free for everyone. The
 //! user's own voice ([`clone`]) is read on this computer by Chatterbox Turbo.
 
 pub mod bpe;
