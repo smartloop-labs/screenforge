@@ -438,6 +438,22 @@
   .plan.lite { border-color: var(--line-2); }
   .plan.pro { border-color: var(--jade); box-shadow: 0 0 0 1px var(--jade); }
   .plan .name .tag { margin-left: 8px; vertical-align: middle; }
+  /* the three cards side by side share their rows (subgrid): name, price, note, buy button,
+     error, list, then the foot (two rows: the free card's download button sits in the first). So the prices and the buy buttons line up across cards
+     whatever wraps in one of them (a tag by the name, a two-line note, a longer translation). */
+  @media (min-width: 1081px) {
+    @supports (grid-template-rows: subgrid) {
+      .plans { grid-template-rows: repeat(5, auto) 1fr auto auto; row-gap: 0; }
+      .plans > .plan { display: grid; grid-template-rows: subgrid; grid-row: span 8; }
+      .plans > .plan > .opt { display: contents; }
+      .plans > .plan > .name { align-self: center; }
+      .plans > .plan > ul { grid-row: 6; }
+      .plans > .plan.lite > ul { grid-row: 4 / 7; }
+      .plans > .plan.lite > .alt { grid-row: 7; align-self: end; }
+      .plans > .plan > .foot { grid-row: 7 / 9; align-self: end; }
+      .plans > .plan.lite > .foot { grid-row: 8; }
+    }
+  }
   @media (max-width: 1080px) { .plans { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
   .plan.lite .name { color: var(--jade); }
   .opt { padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--line); }
