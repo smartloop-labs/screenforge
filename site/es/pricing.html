@@ -854,17 +854,31 @@ gtag('config', 'G-ZYRJDJ736V');
         err.classList.remove('on');
         var label = btn.textContent;
         btn.disabled = true; btn.textContent = 'Abriendo el pago…';
-        fetch(ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': ANON, 'Authorization': 'Bearer ' + ANON },
-          body: JSON.stringify(PROMO && f.dataset.plan === 'lifetime' ? { plan: 'lifetime', promo: PROMO } : { plan: f.dataset.plan })
-        })
-          .then(function (r) {
+        function start(body) {
+          return fetch(ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': ANON, 'Authorization': 'Bearer ' + ANON },
+            body: JSON.stringify(body)
+          }).then(function (r) {
             return r.json().catch(function () { return {}; }).then(function (j) {
-              if (!r.ok || !j || !j.url) throw new Error((j && (j.error || j.message)) || ('checkout returned ' + r.status));
+              if (!r.ok || !j || !j.url) {
+                var ex = new Error((j && (j.error || j.message)) || ('checkout returned ' + r.status));
+                ex.status = r.status;
+                throw ex;
+              }
               return j.url;
             });
-          })
+          });
+        }
+        var plan = f.dataset.plan;
+        // a code from the link that checkout refuses (400: expired, unknown) must not block the
+        // sale: open checkout without it, at the regular price, with Stripe's own code box
+        (PROMO && plan === 'lifetime'
+          ? start({ plan: plan, promo: PROMO }).catch(function (ex) {
+              if (ex.status !== 400) throw ex;
+              return start({ plan: plan });
+            })
+          : start({ plan: plan }))
           .then(function (url) { location.href = url; })
           .catch(function (ex) {
             show('No se pudo iniciar el pago (' + ex.message + '). Inténtalo de nuevo en un momento o escribe a license@screenforge.studio.');
