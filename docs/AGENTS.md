@@ -14,10 +14,16 @@ From easiest to most manual:
   Code* open those editors' install prompts. *Copy MCP command* is for any other agent.
 - **Claude Code plugin**: it connects the server and adds a skill that teaches the agent how to
   record and edit. The source is in `integrations/claude-plugins` (published as
-  `smartloop-labs/screenforge-plugins`):
+  `smartloop-labs/screenforge-plugins`). In Claude Code, run these one at a time: first add the
+  marketplace,
 
   ```
   /plugin marketplace add smartloop-labs/screenforge-plugins
+  ```
+
+  then install the plugin:
+
+  ```
   /plugin install screenforge@screenforge
   ```
 
