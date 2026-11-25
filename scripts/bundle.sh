@@ -3,11 +3,14 @@
 set -e
 cd "$(dirname "$0")/.."
 PROFILE=debug
-if [ "$1" = "--release" ]; then PROFILE=release; cargo build --release -p studio; else cargo build -p studio; fi
+if [ "$1" = "--release" ]; then PROFILE=release; cargo build --release -p studio -p sf-cli; else cargo build -p studio -p sf-cli; fi
 APP=target/ScreenForge.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "target/$PROFILE/screenforge" "$APP/Contents/MacOS/ScreenForge"
+# the command line tool, also the MCP server agents use:
+#   claude mcp add screenforge -- /Applications/ScreenForge.app/Contents/MacOS/sf mcp
+cp "target/$PROFILE/sf" "$APP/Contents/MacOS/sf"
 cp apps/studio/assets/icon.icns "$APP/Contents/Resources/icon.icns"
 # ScreenForge's own wallpapers (and any other bundled assets) → Contents/Resources/assets
 mkdir -p "$APP/Contents/Resources/assets" && cp -R assets/. "$APP/Contents/Resources/assets/"
@@ -72,11 +75,12 @@ if [ -z "$CODESIGN_IDENTITY" ] && [ "$NO_SIGN" != "1" ]; then
   CODESIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
 fi
 if [ -n "$CODESIGN_IDENTITY" ]; then
-  for f in "$APP/Contents/Resources/bin/"*; do [ -f "$f" ] && codesign --force --options runtime --timestamp --entitlements "$ENT" --sign "$CODESIGN_IDENTITY" "$f"; done
+  for f in "$APP/Contents/Resources/bin/"* "$APP/Contents/MacOS/sf"; do [ -f "$f" ] && codesign --force --options runtime --timestamp --entitlements "$ENT" --sign "$CODESIGN_IDENTITY" "$f"; done
   codesign --force --options runtime --timestamp --entitlements "$ENT" --identifier dev.screenforge.app --sign "$CODESIGN_IDENTITY" "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   echo "signed as $CODESIGN_IDENTITY"
 else
+  codesign --force --sign - "$APP/Contents/MacOS/sf"
   codesign --force --identifier dev.screenforge.app --sign - "$APP"
   echo "signed ad-hoc (permissions reset on every rebuild; add a Developer ID certificate to avoid that)"
 fi

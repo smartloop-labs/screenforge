@@ -45,6 +45,13 @@ hand. Projects are saved as `.screenforge` packages.
   SRT and WebVTT export.
 - **Camera smarts**: on-device face tracking keeps you centred; DaVinci Resolve style colour
   grading and `.cube` LUTs.
+- **Use your own agent (MCP)**: `sf mcp` lets Claude Code, Codex, Cursor or any MCP client
+  record the screen and edit projects with the same tools as the built-in agent, and see the
+  result with `render_frame`. ScreenForge spends no tokens of its own. An open editor picks up
+  the edits live. Set up from the toolbar's settings menu (AI agents → Add to Claude Code,
+  Cursor or VS Code), the Claude Code plugin (`/plugin marketplace add
+  smartloop-labs/screenforge-plugins`), or `claude mcp add screenforge -- screenforge-cli mcp`
+  after a Homebrew install; see [docs/AGENTS.md](docs/AGENTS.md).
 - **Details for publishing**: every export writes a title, a description (ending with the
   chapters) and tags beside the video (`Demo.details.txt`) and shows them to copy. With the agent
   on, Claude writes them from the transcript while the video renders; otherwise they come from
@@ -135,7 +142,7 @@ are issued.
 | `crates/sf-export`   | headless export loop |
 | `crates/sf-recording`| recorder (ScreenCaptureKit, webcam, iPhone/iPad, input events, cursor capture) writing the polyrecorder layout; video import |
 | `apps/studio`        | egui desktop app (launcher, editor, agent panel, narration, export) |
-| `apps/sf-cli`        | `sf inspect | frame | export | resave` |
+| `apps/sf-cli`        | `sf record | sources | inspect | frame | export | transcribe | mcp …`; `sf mcp` is the MCP server for your own agent |
 
 ## Requirements
 

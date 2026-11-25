@@ -134,6 +134,10 @@ pub struct Editor {
     pub dirty: bool,
     /// Time of the last change; unsaved changes are written shortly after editing stops.
     last_edit: Option<Instant>,
+    /// project.json's modification time when it was last read or written here: another
+    /// program (`sf mcp`, driven by the user's own agent) changing it is picked up live.
+    disk_stamp: Option<std::time::SystemTime>,
+    disk_checked: Option<Instant>,
     pub timeline: TimelineWidget,
     pub export: ExportDialog,
     pub undo: Vec<sf_project::Project>,
@@ -232,6 +236,8 @@ impl Editor {
             music: Default::default(),
             dirty: false,
             last_edit: None,
+            disk_stamp: project_stamp(path),
+            disk_checked: None,
             timeline: TimelineWidget::default(),
             export: ExportDialog::new(),
             undo: vec![],
@@ -790,12 +796,66 @@ impl Editor {
         self.write_project(true);
     }
 
+    /// Take edits another program saved to project.json (an agent through `sf mcp`) as one
+    /// undo step, checked about once a second. Unsaved edits made here win: they are saved
+    /// over it a moment later.
+    fn reload_if_changed_on_disk(&mut self, ctx: &egui::Context) {
+        const EVERY: std::time::Duration = std::time::Duration::from_millis(1000);
+        if self.disk_checked.is_some_and(|t| t.elapsed() < EVERY) {
+            return;
+        }
+        self.disk_checked = Some(Instant::now());
+        ctx.request_repaint_after(EVERY);
+        let now = project_stamp(&self.path);
+        if now.is_none() || now == self.disk_stamp {
+            return;
+        }
+        self.disk_stamp = now;
+        if self.dirty {
+            self.set_status("The project changed on disk; keeping your edits");
+            return;
+        }
+        let pkg = match sf_project::ProjectPackage::open(&self.path) {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(format!("The project changed on disk but could not be read: {e}"));
+                return;
+            }
+        };
+        let mut project = pkg.project;
+        // the playback position is this window's own
+        if let Some(v) = self.session.pkg.project.data.get("last-playback-position-source-time-ms") {
+            project.data.insert("last-playback-position-source-time-ms".into(), v.clone());
+        }
+        if project == self.session.pkg.project {
+            return;
+        }
+        let before = std::mem::replace(&mut self.session.pkg.project, project);
+        let audio_changed = {
+            let (b, n) = (&before, &self.session.pkg.project);
+            b.config.audio != n.config.audio || b.scenes[0].voice_overs != n.scenes[0].voice_overs || b.scenes[0].extra != n.scenes[0].extra
+        };
+        self.undo.push(before);
+        self.redo.clear();
+        self.after_edit();
+        if audio_changed {
+            self.reload_audio();
+        }
+        // already on disk: nothing to autosave
+        self.dirty = false;
+        self.last_edit = None;
+        self.preview_stale = true;
+        tracing::info!("{} changed on disk: reloaded", self.path.display());
+        self.set_status("Updated from disk · ⌘Z undoes it");
+    }
+
     fn write_project(&mut self, explicit: bool) {
         let src = self.session.timeline.output_to_source(self.playhead_ms).unwrap_or(0.0);
         self.session.pkg.project.data.insert("last-playback-position-source-time-ms".into(), serde_json::json!(src));
         match self.session.pkg.save() {
             Ok(()) => {
                 self.dirty = false;
+                self.disk_stamp = project_stamp(&self.path);
                 if explicit {
                     sf_session::preview::write_quicklook_preview_async(&self.session.pkg.path);
                     self.preview_stale = false;
@@ -882,6 +942,7 @@ impl Editor {
     }
 
     fn tick(&mut self, ctx: &egui::Context) {
+        self.reload_if_changed_on_disk(ctx);
         self.autosave(ctx);
         // audio decodes in the background: keep drawing until the waveform can show
         if self.audio.is_loading() {
@@ -2030,4 +2091,9 @@ impl PresetDialog {
 fn chrono_like_stamp() -> String {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     format!("{}", secs % 100_000)
+}
+
+/// When project.json in the package at `path` was last written.
+fn project_stamp(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path.join(sf_project::package::PROJECT_FILE)).and_then(|m| m.modified()).ok()
 }

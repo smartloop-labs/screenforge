@@ -30,7 +30,8 @@ impl Assets {
         if let Ok(p) = std::env::var("SF_ASSETS") {
             roots.push(PathBuf::from(p));
         }
-        if let Ok(exe) = std::env::current_exe() {
+        // through a symlink (Homebrew's screenforge-cli), look next to the real file
+        if let Ok(exe) = std::env::current_exe().map(|e| std::fs::canonicalize(&e).unwrap_or(e)) {
             if let Some(dir) = exe.parent() {
                 roots.push(dir.join("../Resources/assets"));
                 roots.push(dir.join("assets"));

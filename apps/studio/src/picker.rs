@@ -246,11 +246,13 @@ pub struct Picker {
     devices_rx: Option<std::sync::mpsc::Receiver<Inputs>>,
     /// Menu text has been laid out once (glyphs are in the font atlas).
     menus_warm: bool,
+    /// Settings → AI agents: whether Claude Code has the MCP server.
+    agents: crate::agents::Agents,
 }
 
 impl Default for Picker {
     fn default() -> Self {
-        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: false, recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false }
+        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: false, recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
     }
 }
 
@@ -264,8 +266,9 @@ const STATUS_H: f32 = 28.0 + 8.0;
 const STATUS_WINDOW_H: f32 = BAR_WINDOW_H + STATUS_H;
 /// How long a status notice stays up.
 const STATUS_FOR: std::time::Duration = std::time::Duration::from_secs(4);
-/// Window height while a menu is open: tall enough for the settings menu above the bar.
-pub const MENU_WINDOW_H: f32 = 600.0;
+/// Window height while a menu is open: tall enough for the settings menu above the bar
+/// (its AI agents section included).
+pub const MENU_WINDOW_H: f32 = 720.0;
 /// Project card in the recent panel (thumbnail, name, age).
 const CARD_SIZE: egui::Vec2 = vec2(176.0, 150.0);
 /// Page dots sit this far above the recent panel's bottom edge (centre of the dots).
@@ -516,6 +519,39 @@ impl Picker {
             if !typing && r.on_hover_text("Allow Accessibility so automatic zooms follow the text caret while you type").clicked() {
                 if sf_recording::permissions::request_accessibility() != sf_recording::PermissionStatus::Granted {
                     let _ = sf_recording::permissions::open_settings(sf_recording::Permission::Accessibility);
+                }
+            }
+            if let Some(sf) = crate::agents::cli_path() {
+                use crate::agents::Claude;
+                menu_section(ui, "AI agents", false);
+                self.agents.check();
+                self.agents.poll(ui.ctx());
+                const WHAT: &str = "Your agent can record the screen and edit projects with ScreenForge's tools (an MCP server on this computer; ScreenForge spends no AI tokens of its own)";
+                match self.agents.claude.clone() {
+                    Claude::Connected => {
+                        crate::widgets::menu_item(ui, true, "Connected to Claude Code").on_hover_text(format!("{WHAT}. Ask Claude Code to record or edit a video; restart sessions that were already open."));
+                    }
+                    Claude::Unknown | Claude::Working => menu_note(ui, "Looking for Claude Code…"),
+                    Claude::Missing => menu_note(ui, "Claude Code not found: copy the command below"),
+                    Claude::NotConnected | Claude::Failed(_) => {
+                        let failed = match &self.agents.claude {
+                            Claude::Failed(e) => format!(" (last try: {e})"),
+                            _ => String::new(),
+                        };
+                        if crate::widgets::menu_item(ui, false, "Add to Claude Code").on_hover_text(format!("{WHAT}. Runs claude mcp add for all your projects{failed}")).clicked() {
+                            self.agents.add(sf.clone());
+                        }
+                    }
+                }
+                if crate::widgets::menu_item(ui, false, "Add to Cursor").on_hover_text(format!("{WHAT}. Opens Cursor to confirm")).clicked() {
+                    crate::os::open(crate::agents::cursor_link(&sf));
+                }
+                if crate::widgets::menu_item(ui, false, "Add to VS Code").on_hover_text(format!("{WHAT}. Opens VS Code to confirm")).clicked() {
+                    crate::os::open(crate::agents::vscode_link(&sf));
+                }
+                if crate::widgets::menu_item(ui, false, "Copy MCP command").on_hover_text("For Codex, Gemini CLI and other agents: the server is this command, run over stdio").clicked() {
+                    ui.ctx().copy_text(crate::agents::claude_command(&sf));
+                    self.status = Some(("Copied the Claude Code command; other agents run the same program with the argument mcp".into(), std::time::Instant::now()));
                 }
             }
             menu_section(ui, &format!("Updates · v{}", crate::update::version()), false);

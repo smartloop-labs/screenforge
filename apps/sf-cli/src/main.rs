@@ -8,6 +8,10 @@ use sf_media::VideoCodec;
 use sf_render::{Compositor, Gpu};
 use sf_session::Session;
 
+mod host;
+mod mcp;
+mod record;
+
 #[derive(Parser)]
 #[command(name = "sf", version, about = "ScreenForge – open source screen recorder and editor")]
 struct Cli {
@@ -123,6 +127,39 @@ enum Cmd {
     PresetCreate { project: PathBuf, out: PathBuf },
     /// Apply a preset to a project (keeps the crop) and save it
     PresetApply { project: PathBuf, preset: PathBuf },
+    /// Run an MCP server on stdin/stdout so an agent (Claude Code, Codex …) can record and
+    /// edit projects: `claude mcp add screenforge -- sf mcp`
+    Mcp,
+    /// List the displays, windows and microphones that can be recorded, and the permissions
+    Sources,
+    /// Record the screen into a new project (press Enter to stop, or pass --seconds)
+    Record {
+        /// Display id (see `sf sources`); the main display by default
+        #[arg(long)]
+        display: Option<u32>,
+        /// Window id, or a word of its title or app name: records the area around it
+        #[arg(long)]
+        window: Option<String>,
+        /// Microphone id or name, or "default"
+        #[arg(long)]
+        mic: Option<String>,
+        #[arg(long)]
+        system_audio: bool,
+        /// Don't record clicks, keys and the cursor
+        #[arg(long)]
+        no_input: bool,
+        /// Stop after this many seconds
+        #[arg(long)]
+        seconds: Option<f64>,
+        #[arg(long)]
+        name: Option<String>,
+        /// Projects folder (default: ~/ScreenForge Projects)
+        #[arg(long)]
+        to: Option<PathBuf>,
+        /// Don't add zooms around the clicks
+        #[arg(long)]
+        no_auto_zooms: bool,
+    },
     /// License key tools (issuer side): keygen, sign, verify
     License {
         #[command(subcommand)]
@@ -154,6 +191,29 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     match Cli::parse().cmd {
         Cmd::Inspect { path, json } => inspect(&path, json),
+        Cmd::Mcp => mcp::serve(),
+        Cmd::Sources => {
+            println!("{}", serde_json::to_string_pretty(&record::sources())?);
+            Ok(())
+        }
+        Cmd::Record { display, window, mic, system_audio, no_input, seconds, name, to, no_auto_zooms } => {
+            let req = record::Request { display, window, microphone: mic, system_audio, input: !no_input, name };
+            let rec = record::Active::start(&req)?;
+            match seconds {
+                Some(s) => {
+                    eprintln!("recording {} for {s} s", rec.what);
+                    std::thread::sleep(std::time::Duration::from_secs_f64(s.max(0.5)));
+                }
+                None => {
+                    eprintln!("recording {}; press Enter to stop", rec.what);
+                    let mut line = String::new();
+                    std::io::stdin().read_line(&mut line)?;
+                }
+            }
+            let path = rec.finish(to.as_deref(), !no_auto_zooms)?;
+            println!("{}", path.display());
+            Ok(())
+        }
         Cmd::Preview { project } => {
             sf_session::preview::write_quicklook_preview(&project)?;
             println!("wrote {}", project.join(sf_project::package::QUICKLOOK_PREVIEW).display());
