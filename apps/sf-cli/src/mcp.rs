@@ -51,7 +51,7 @@ How to edit:
 - Zooms, masks and camera layouts each sit on one lane and cannot overlap. Zoom gently: 1.3–1.5× for text and typing, about 2× only for a small detail; a few seconds each.
 - Settings (background, padding, corners, shadow, cursor, camera, captions, audio, aspect ratio) are changed with patch_project; get_options lists the values and where each setting lives, get_config shows current values.
 - \"Auto edit\" / tighten: with a transcript cut long pauses and filler words; speed up stretches where nothing is said or clicked (2–4×); add zooms around the clicks (add_auto_zooms) if there are none.
-- render_frame shows the finished look (background, zoom, captions) at a time: use it to check your work. export writes the video file.
+- render_frame shows the finished look (background, zoom, captions) at a time: use it to check your work. export writes the video file; pass it a title, description and tags you write (ScreenForge has no model of its own here to write them).
 - undo_answers reverts your earlier edits in this session.";
 
 /// A project the server has open.
@@ -357,10 +357,19 @@ impl Server {
                 send(&json!({ "jsonrpc": "2.0", "method": "notifications/progress", "params": { "progressToken": progress, "progress": p.frame, "total": p.total_frames, "message": "Exporting" } }));
             }
         })?;
-        let details = sf_engine::details::template(&sf_export::details_input(&open.session, opts.range_ms));
+        let input = sf_export::details_input(&open.session, opts.range_ms);
+        let details = written_details(args, &input);
         let dtxt = sf_export::details_txt_path(&result);
         std::fs::write(&dtxt, details.to_text())?;
-        Ok(vec![text(json!({ "file": result, "seconds": started.elapsed().as_secs(), "details": dtxt }).to_string())])
+        let mut out = json!({ "file": result, "seconds": started.elapsed().as_secs(), "details": dtxt });
+        if !details.by_ai {
+            out["note"] = json!(if details.description.trim().is_empty() {
+                "The details file has no description (there is no transcript to start one from). Write a title, description and tags from what the video shows and call export again with them."
+            } else {
+                "The details file is a template: the opening of the transcript and words from it. Pass title, description and tags to export for better ones."
+            });
+        }
+        Ok(vec![text(out.to_string())])
     }
 }
 
@@ -476,7 +485,7 @@ pub fn tool_list() -> Vec<Value> {
         },
         {
             "name": "export",
-            "description": "Export the edited video to a file (default: next to the project, named after it). Takes about as long as the video for 1080p60. Also writes <name>.details.txt with a title, description and tags.",
+            "description": "Export the edited video to a file (default: next to the project, named after it). Takes about as long as the video for 1080p60. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -487,7 +496,10 @@ pub fn tool_list() -> Vec<Value> {
                     "fps": { "type": "number", "description": "Default 60" },
                     "quality": { "type": "number", "description": "0.1–1, default 0.85" },
                     "no_audio": { "type": "boolean" },
-                    "range": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[start_ms, end_ms] of the timeline only" }
+                    "range": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[start_ms, end_ms] of the timeline only" },
+                    "title": { "type": "string", "description": "Title for the details file (e.g. a YouTube title, under 70 characters). Default: the project name" },
+                    "description": { "type": "string", "description": "Description for the details file: a few sentences on what the video shows. The chapter list is added under it. Default: the transcript's opening, or empty without a transcript" },
+                    "tags": { "type": "array", "items": { "type": "string" }, "description": "Up to 12 tags for the details file. Default: words from the transcript and title" }
                 },
                 "required": ["project"]
             }
@@ -497,9 +509,50 @@ pub fn tool_list() -> Vec<Value> {
     tools
 }
 
+/// The details file's contents: the agent's own title, description and tags where it gave
+/// them, the template for the rest. The chapter list goes under the agent's description too.
+fn written_details(args: &Value, input: &sf_engine::details::Input) -> sf_engine::details::Details {
+    let mut d = sf_engine::details::template(input);
+    let given = |k: &str| args[k].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    if let Some(title) = given("title") {
+        d.title = title;
+        d.by_ai = true;
+    }
+    if let Some(description) = given("description") {
+        d.description = sf_engine::details::with_chapters(&description, &input.chapter_list);
+        d.by_ai = true;
+    }
+    if let Some(tags) = args["tags"].as_array() {
+        let mut list: Vec<String> = vec![];
+        for t in tags.iter().filter_map(|t| t.as_str()).map(|t| t.trim().trim_start_matches('#').to_string()) {
+            if !t.is_empty() && list.len() < sf_engine::details::MAX_TAGS && !list.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+                list.push(t);
+            }
+        }
+        if !list.is_empty() {
+            d.tags = list;
+            d.by_ai = true;
+        }
+    }
+    d
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_details_replace_the_template() {
+        let input = sf_engine::details::Input { name: "MCP demo".into(), transcript: String::new(), chapters: vec![], chapter_list: "00:00 Intro\n00:12 Export".into(), duration_ms: 24_000.0 };
+        let plain = written_details(&json!({}), &input);
+        assert!(!plain.by_ai);
+        assert_eq!(plain.title, "MCP demo");
+        let d = written_details(&json!({ "title": " Edit videos from Claude Code ", "description": "Claude records the screen.", "tags": ["#mcp", "MCP", "claude code", ""] }), &input);
+        assert!(d.by_ai);
+        assert_eq!(d.title, "Edit videos from Claude Code");
+        assert_eq!(d.description, "Claude records the screen.\n\nChapters\n00:00 Intro\n00:12 Export");
+        assert_eq!(d.tags, vec!["mcp", "claude code"]);
+    }
 
     #[test]
     fn tools_are_valid_and_unique() {

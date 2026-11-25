@@ -52,8 +52,8 @@ The Windows build does not ship the tool yet.
   transitions, chapters, presets and every sidebar setting through `patch_project`.
   `transcribe` runs Whisper on this computer and returns when it is done.
 - **Check and deliver**: `render_frame` returns the finished look at any time as an image.
-  `export` writes the video (mp4, hevc, prores, gif, webm) and a `.details.txt` with a title,
-  description and tags.
+  `export` writes the video (mp4, hevc, prores, gif, webm) and a `.details.txt` with the
+  title, description and tags the agent passes (a template from the transcript otherwise).
 
 Every editing tool takes `project`, the path of the `.screenforge` package. Tool times are
 milliseconds on the edited timeline. Each edit is saved straight away, with `project.json.bak`
