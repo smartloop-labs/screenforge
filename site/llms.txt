@@ -14,6 +14,7 @@ ScreenForge is made for tutorials, product demos, lessons, promos, talking-head 
 - [Changelog](https://screenforge.studio/changelog/): every version and what changed, with an Atom feed at /changelog/feed.xml
 - [Privacy policy](https://screenforge.studio/privacy): what stays on your computer and when the app goes online
 - [Spanish site](https://screenforge.studio/es/)
+- [Full text](https://screenforge.studio/llms-full.txt): the main pages above as one Markdown file
 
 ## Features
 

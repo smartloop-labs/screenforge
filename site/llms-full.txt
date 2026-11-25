@@ -1,0 +1,672 @@
+# ScreenForge
+
+> ScreenForge is a free AI screen recorder with zoom animation and an AI video editor built in, for macOS, Windows and Linux. Record your screen, webcam or (on a Mac) an iPhone or iPad, or drop in any MP4 or MOV, then ask for the edit in plain language: cuts, zooms, speed, captions, music, backgrounds and voice-over. Or fine-tune it by hand on the timeline.
+
+ScreenForge is made for tutorials, product demos, lessons, promos, talking-head videos and async video messages. It is free to try: record, edit and export twice before you pay.
+
+This is the full text of the main pages of screenforge.studio. The short index is at https://screenforge.studio/llms.txt.
+
+---
+
+# Home
+
+Source: https://screenforge.studio/
+
+## AI screen recorder and video editor. Pro demos, guides, lessons and promos, made easy. Just ask. It edits.
+
+- cut the ums and the long pauses
+- zoom on my clicks
+- get this under a minute
+- add calm music and a mountain photo
+
+A screen recorder with integrated AI to supercharge your video editing. Record your screen on Mac, Windows or Linux, or drop in any video, then ask for the edit or fine-tune it by hand.
+
+Download for macOS Free to try · Pro adds the AI agent · also on Windows and Linux
+
+Backed by
+
+What it does
+
+## Record, edit, export. One native app.
+
+A recorder and a timeline editor in one window. No Electron, no web view; the compositor runs on the GPU and the UI is drawn natively.
+
+AI editing agent new
+
+### Edit by asking
+
+Say what you want and watch the timeline change as the agent works. It reads the transcript, your clicks and the video itself, then cuts, zooms, speeds up, adds music or narration. Auto edit tightens the whole video; one `⌘Z` undoes a whole answer.
+
+Async video
+
+### Record, share a link, skip the meeting
+
+Tick “Make a share link too” and Export uploads the video, then lists every way to paste it: the link, the MP4, Markdown for GitHub and Notion, and an embed for your site. It plays in any browser, no sign-in, and unfurls with a preview in chat. Export again and the same link plays the new version.
+
+Zoom
+
+### Automatic zooms
+
+Zooms open on your clicks and follow the cursor as you work, easing in and out. Adjust or remove any of them on the timeline.
+
+Camera
+
+### You on camera
+
+Overlay, split or full screen, switched along the timeline. The camera follows your face, and Resolve-style colour grading with LUTs makes it look right.
+
+Captions
+
+### Captions from your voice
+
+Transcribed on your computer with Whisper, nothing uploaded. Line by line or word by word, burned into the export or saved as SRT and WebVTT.
+
+Voice-over
+
+### Narrate after you record
+
+Press `R` and talk over the video, or type a script and an AI voice reads it: six voices on your computer, eight studio voices online, or your own voice cloned by ElevenLabs. Clean up a take or re-voice it, keeping your timing and accent.
+
+Bring your videos
+
+### Import from Loom
+
+Moving from Loom? Paste a Loom link and the video becomes a project you can edit. Any MP4 or MOV starts a project when you drop it, or joins the timeline of an open one.
+
+Privacy and framing
+
+### Blur, highlight, crop
+
+Blur passwords and private details or dim everything but the part that matters, timed on the timeline. Crop to the part of the screen you need; zooms and cursor follow.
+
+Native and fast
+
+### GPU rendering, native capture
+
+ScreenCaptureKit, Desktop Duplication or PipeWire capture; a wgpu compositor renders the timeline. Export MP4, HEVC, ProRes, GIF or WebM with mixed audio.
+
+Devices and keys
+
+### iPhone frames, shortcuts on screen
+
+Record an iPhone or iPad over a cable and show it in a device frame. Shortcuts you press appear as key caps, like `⇧ ⌘ S`, so viewers can follow along.
+
+Looks and sound
+
+### Backgrounds, frames and music
+
+Set the recording on a wallpaper, your desktop's own, a gradient or an Unsplash photo, with shadow and inset. Put a phone video in a device frame. Pick a track from the built-in music library, lo-fi to cinematic, or drop in your own.
+
+Platforms
+
+## One app. Every desktop.
+
+The same recorder and editor on all three, with projects that open anywhere. Recording and editing are free on each.
+
+macOS
+
+Apple silicon · macOS 14 or later · signed and notarized
+
+Screen, window or area with ScreenCaptureKit, webcam, system audio, and iPhone or iPad over a cable. Also on Homebrew.
+
+Download for macOS
+
+Windows
+
+x86_64 · Windows 10 or later · installer or portable zip
+
+Desktop Duplication capture with cursor, clicks, keystrokes and system audio, just like the Mac build. Signed by Smartloop Inc.
+
+Download for Windows
+
+Linux
+
+x86_64 · X11 and Wayland · .deb or .tar.gz
+
+Native PipeWire capture on Wayland, full input capture on X11, ffmpeg included. Also on Homebrew.
+
+Download for Linux
+
+Native app, 100% RustRecordings never leave your computerNo analytics in the appCaptions and voices run on device
+
+Pricing
+
+## Pricing that fits how you work.
+
+Recording and editing are free, and your first 2 exports are free. After that, exporting needs a license: Pro adds the agent with 1,000 credits a month and unlimited export; Creator is export alone, US$49 once. Export keys are verified offline.
+
+Try freeRecord, edit and export your first 2 videos. Pay only when you want more.
+
+VoicesSix on-device voices for narration, and studio ElevenLabs voices read online. All free.
+
+OfflineExport keys are checked on your machine. The AI agent runs on Claude, through our server.
+
+RefundsWithin 24 hours. Pro: before using credits.
+
+Pro
+
+US$20/month
+
+cancel anytime · credits refill every month
+
+- The AI editing agent: ask for edits, or Auto edit the whole video
+- 1,000 agent credits a month; top-up packs never expire
+- Unlimited export to MP4, ProRes, GIF and WebM
+- Every future update included
+
+Get Pro
+
+Only need export? Creator is US$49 once. See all plans
+
+Get started
+
+## Record your first clip in a minute.
+
+Download for macOS
+
+---
+
+# Download
+
+Source: https://screenforge.studio/download
+
+Download
+
+## Download ScreenForge for macOS.
+
+Apple silicon · macOS 14 or later · recording and editing are free
+
+chipApple silicon macOS14 or later sizea few MB statusbeta
+
+Download .dmg finding the latest release…
+
+## Install
+
+- Step 1Open the DMGDouble-click the file you just downloaded. A window opens with the app and a shortcut to Applications.
+- Step 2Drag to ApplicationsDrop ScreenForge on the Applications folder, eject the disk image, launch it from Applications or Spotlight.
+- Step 3Grant two permissionsOn first launch macOS asks for Screen Recording and Input Monitoring. Both live in System Settings → Privacy & Security. Recording needs the first; automatic zooms, which follow your clicks and typing, need the second.
+
+Prefer Homebrew? It installs the app, keeps it updated with `brew upgrade`, and puts `screenforge-cli` on your PATH for AI agents.
+
+```
+$ brew install zot24/tap/screenforge
+```
+
+The app runs without a license. Recording and editing are free, and your first 2 exports are too; after that, exporting needs a license from the pricing page.
+
+Use Claude Code, Cursor or another AI agent? Connect it to ScreenForge to record and edit from there.
+
+On Windows? Get the Windows version. On Linux? Get the Linux version.
+
+## Download ScreenForge for Linux.
+
+x86_64 · ffmpeg included · recording and editing are free
+
+archx86_64 sessionX11 or Wayland ffmpegincluded statusbeta
+
+Download .deb Download .tar.gz Debian / Ubuntu: .deb · other distros: .tar.gz
+
+## Install
+
+- Step 1Install the packageFrom the folder you downloaded to, run `sudo apt install ./screenforge_amd64.deb`, or open it in your software center. ffmpeg comes bundled; nothing else to install.
+- Step 2Share your screenRecording works on X11 and Wayland. On Wayland (GNOME, KDE Plasma) your first recording opens the system's "Share your screen" dialog: pick your screen and click Share. ScreenForge remembers the choice and only asks again for a different monitor. To record a window, pick it on the dialog's Window tab. On Wayland the cursor is part of the video and clicks and keystrokes are not recorded, so automatic zooms and cursor effects are not available there yet.
+- Step 3LaunchOpen ScreenForge from your app menu, or run `screenforge` in a terminal. System audio recording is not available on Linux yet; the microphone works.
+
+```
+$ sudo apt install ./screenforge_amd64.deb   # Debian / Ubuntu
+$ brew install zot24/tap/screenforge   # Homebrew on Linux
+$ tar xzf ScreenForge-linux-x86_64.tar.gz && ./ScreenForge/screenforge   # other distros
+$ systemctl --user restart xdg-desktop-portal   # Wayland: no "Share your screen" dialog? restart the portal
+```
+
+The app runs without a license. Recording and editing are free, and your first 2 exports are too; after that, exporting needs a license from the pricing page.
+
+Use Claude Code, Cursor or another AI agent? Connect it to ScreenForge to record and edit from there.
+
+On a Mac? Get the macOS version. On Windows? Get the Windows version.
+
+## Download ScreenForge for Windows.
+
+x86_64 · Windows 10 or later · ffmpeg included · recording and editing are free
+
+archx86_64 Windows10 (2004) or later ffmpegincluded statusbeta
+
+Download installer Portable .zip installer: Start menu and uninstall · zip: run from any folder
+
+## Install
+
+- Step 1Run the installerIt installs for your user account only, so no administrator prompt. The installer is signed by Smartloop Inc. If your browser or SmartScreen still warns about a rarely downloaded file, choose Keep and then More info → Run anyway; the warning goes away as the certificate earns reputation. Prefer no install? Unzip the portable build anywhere and run `screenforge.exe`.
+- Step 2RecordNo permissions to grant: the screen is captured through the Desktop Duplication API, and the cursor, clicks and keystrokes are recorded separately so the editor can smooth and zoom them. System audio and the microphone both work.
+- Step 3LaunchOpen ScreenForge from the Start menu. ffmpeg comes bundled; nothing else to install.
+
+The app runs without a license. Recording and editing are free, and your first 2 exports are too; after that, exporting needs a license from the pricing page.
+
+On a Mac? Get the macOS version. On Linux? Get the Linux version.
+
+---
+
+# Pricing
+
+Source: https://screenforge.studio/pricing
+
+Pricing
+
+## Pricing that fits how you work.
+
+try free: record and edit before you pay · Pro US$20/month with the AI agent · Creator US$49 once · 24-hour refund (Pro: before using credits)
+
+Try it free
+
+Freeno time limit
+
+no account · no key · no card
+
+- Record a display, a window or an area
+- Automatic zooms, captions and the independent audio track
+- Cut, trim and add music on the timeline, with on-device voice-over
+- Export when you’re ready, with Pro or Creator
+
+Download for macOS
+
+Make the whole video before you spend anything, and pick a plan only when it’s worth exporting.
+
+Pro AI agent
+
+US$20/month
+
+cancel anytime · credits refill every month
+
+- The AI editing agent: ask for edits in plain words, or Auto edit the whole video
+- 1,000 credits every month for the agent
+- Top up anytime: credit packs never expire
+- Unlimited export, like Creator
+- Email support from a person, usually the same day
+
+Stripe takes the payment and asks for your email there. The key arrives by email; activate it in ScreenForge with the same email, and the credits show in the agent panel.
+
+Creator
+
+US$49oncelifetime
+
+one payment · the key never expires
+
+- Unlimited export to MP4 (H.264 / HEVC), ProRes, GIF and WebM
+- Verified offline; works without a network
+- Every future update included
+- One key per email, active on one computer at a time; move it whenever you switch
+- Email support from a person, usually the same day
+
+Stripe takes the payment and asks for your email there. The key arrives by email within a minute; in ScreenForge open Export, enter the same email and press Activate, then type the 6-digit code we email you to confirm the computer.
+
+Agent credits
+
+The AI agent runs on Claude. Each request uses credits for what it costs: one credit is about one cent of Claude usage, and a typical edit takes a few. Narration is not paid in credits: the ElevenLabs voices and the on-device voices are free. Pro includes 1,000 a month; when they run out, add a pack. Packs never expire and are used after the monthly credits. The agent is part of Pro, so packs top up a Pro subscription.
+
+Buy packs in ScreenForge, from the credits menu in the agent panel.
+
+- 500 credits: US$10
+- 1,250 credits: US$25
+- 2,500 credits: US$50
+- Monthly credits refill on your billing date and do not carry over
+
+Studios & teams
+
+Design studios, agencies and product teams that record a lot get one invoice for every seat and keys issued in bulk to each person's email. Existing screen recording projects open as they are, so nobody has to redo their work.
+
+To ask about a team license, reach out to license@screenforge.studio with your studio name, how many people record and what you use today. A person replies, usually the same day.
+
+- Volume pricing for 5 seats and up: from US$39 a seat
+- One invoice, card or bank transfer
+- Keys for every teammate, re-issued when people change
+- Shared presets so every video matches the brand
+- Priority email support and a say in the roadmap
+
+## Questions
+
+### What does the AI agent cost?
+
+What Claude charges for it, in credits: a short edit takes a few credits, an Auto edit of a long video more. The agent uses Claude Sonnet 5.5 unless you pick another model: Opus 5.5 uses credits twice as fast, Haiku 5.5 about 20 times slower. Pro includes 1,000 credits a month, enough for daily editing; packs top it up and never expire. The agent panel shows your balance and what each conversation used.
+
+### What do the ElevenLabs voices cost?
+
+Nothing. They are free for everyone, with or without a license, and use no credits; each computer has a daily allowance of about a quarter of an hour of narration. The six voices that run on your computer are free too, with no limit.
+
+### How do share links work?
+
+Share links are free and need no sign-in. Check “Make a share link too” in Export: when the video is written, ScreenForge uploads it and puts a `screenforge.studio/s/…` link on your clipboard. Anyone with the link can watch it in a browser, no app or sign-in. Links are unlisted: not searchable and not guessable. Each project keeps one link, so exporting again updates the video behind it. A video can be up to 2 GB, and Export → Your links lists, copies and deletes them.
+
+### How is the key checked?
+
+On your computer. The app verifies the key's signature locally, so exporting works offline. When it is online it briefly checks in with the license server, so a license moved to another computer stops working on the old one.
+
+### How many computers can I use it on?
+
+One at a time. Activating on another computer moves the license there with a code emailed to the address you paid with, so nobody can use your license just by knowing your email, and you never need to contact us to switch Macs. The previous computer stops exporting the next time it is online.
+
+### Is there a subscription?
+
+No. You pay US$49 once and the key never expires. If you set up a new computer, enter the same email, press Activate and type the emailed code; it activates without a new purchase.
+
+### Can I get a refund?
+
+Within 24 hours: the Creator license, no questions asked; Pro and top-ups, if none of their agent credits have been used. Cancel Pro any time. Email license@screenforge.studio from the address you paid with.
+
+### Why pay if the source is open?
+
+The license pays for what the source alone doesn't give you: the signed and notarized download that opens without warnings, the CI that builds and tests every release, and the time to keep it all working.
+
+### Do you have team or studio pricing?
+
+Yes. For five seats or more, email license@screenforge.studio with how many people record. You get volume pricing, one invoice and a key for each teammate. See Studios & teams.
+
+### Do I need an account?
+
+No. There is nothing to sign up for and nothing to sign in to. The email you pay with is the only identifier, and it exists so the key can reach you.
+
+### Does the app phone home?
+
+Only when you press Activate or Buy, to send your email (and, for Activate, an anonymous code for the computer) to the license server; when you open a project on an activated computer, to check the license has not moved; the first time you make captions, to download a speech model, and once a day to ask GitHub whether a newer version is out (you can turn that off). Neither of the last two sends anything about you. There is no telemetry, no usage analytics and no crash reporting. Recordings and exports never leave your computer.
+
+---
+
+# Comparison: Jam vs Screen Studio vs ScreenForge
+
+Source: https://screenforge.studio/comparison
+
+Comparison
+
+## Jam vs Screen Studio vs ScreenForge
+
+Checked 31 October 2026
+
+The short version
+
+Three tools that all record your screen, built for three different jobs. Jam is a bug reporter for software teams: it attaches console and network logs to a recording. Screen Studio is a polished demo recorder for the Mac. ScreenForge is a recorder and editor with an AI agent that edits the timeline from a prompt, on Mac, Windows and Linux. This page is written by the ScreenForge author, so the gaps are listed too.
+
+Yes built inPartly with a caveatNo not offered
+
+|  | Jam jam.dev | Screen Studio screen.studio | ScreenForge screenforge.studio |
+| Pick it if | You file bugs and want console and network logs attached | You want the most polished Mac demo with the least effort | You want to make the most of AI, all-in-one and cross-platform |
+| Platforms |
+| macOS | Yes Mac app, up to 4K | Yes macOS 13.1+, Apple silicon | Yes macOS 14+, Apple silicon |
+| Windows | Browser only Chrome extension, no desktop app | No "no near-future plans" per their FAQ | Yes Windows 10+, cursor, clicks, keys and system audio recorded |
+| Linux | Browser only Chrome extension | No | Yes X11 and Wayland. On Wayland clicks and keys are not captured, so no auto zoom there yet |
+| iPhone / iPad | iOS app records on the phone itself | Over USB device mockups applied | Over USB drawn device frames |
+| Performance and engine |
+| App stack | Chrome extension + web app; Mac app. Processing and sharing happen in the cloud | Native ScreenCaptureKit capture. Third-party reviews describe the UI as Electron; not confirmed by the vendor | Native Rust app, egui UI, wgpu GPU compositor, ffmpeg encode |
+| Capture API | Browser capture; ScreenCaptureKit on Mac | ScreenCaptureKit | ScreenCaptureKit (Mac), Desktop Duplication (Windows), PipeWire portal (Linux) |
+| Local vs cloud | Cloud first: videos live on jam.dev | Local editing and export; optional share links | Local editing and export. Only the AI agent and ElevenLabs voices call a server |
+| Upscaling | No | 6.5× on-device upscaler | No |
+| Maturity | Mature, 300k+ users | Mature, years of releases | Beta no public benchmarks yet |
+| Editing features |
+| Auto zoom | No | Yes classic + loupe styles, smart framing | Yes follows clicks and the typing caret (caret zoom Mac only) |
+| Cursor | No effects | Smooth, motion blur, click effects, resize, hide idle | Smooth, tilt, click effects, cursor sets motion blur setting exists but is not rendered yet |
+| Camera | Camera bubble | Layouts, background cutout, face tracking, hide in silence | Layouts, face tracking, Resolve-style colour grade, .cube LUTs no background cutout |
+| Captions | Transcript, captions, chapters cloud | On-device Whisper or Apple Speech, styled, SRT | On-device Whisper, styled, SRT + WebVTT |
+| Edit via transcript | No | Yes delete text to cut, remove fillers and pauses | By prompt only "cut the ums and pauses" works; no text editor yet |
+| Blur / masks | Auto-blur plan dependent | Not listed | Blur and highlight masks on a timeline lane |
+| Export | Share link hosted on jam.dev | MP4 to 4K60, GIF, 16:9 / 1:1 / 9:16, share links | MP4 H.264/HEVC, ProRes, GIF, WebM, SRT/VTT no hosted share links |
+| Dev context | Console + network logs, device info, Jira / Linear / Slack / GitHub | No | No |
+| Voice-over, music, backgrounds |
+| Voice-over | Narrate while recording | Mic, AI voice from script, noise reduction | Record over the video afterwards, AI narration, +dB boost no noise reduction |
+| AI voices | No | AI voiceover | 6 on-device voices (Kokoro) + 8 ElevenLabs voices All free |
+| Background music | No | Yes | Built-in library or your own files, own audio track |
+| Wallpapers | No | macOS wallpapers, gradients, your images, Unsplash | Built-in, your OS's wallpapers (Mac / Ubuntu / Windows), your images, Unsplash search |
+| AI |
+| What AI does | Writes a title, summary and repro steps for each bug | AI voice-over, transcript-based editing, on-device transcription | An editing agent (Claude) edits the timeline from a prompt: cuts, speed, zooms, masks, music, narration, backgrounds. Plus narration and captions |
+| AI for agents | MCP server coding agents read logs and video | No | No MCP the agent is inside the app |
+| Runs where | Cloud | Mostly on-device; cloud transcription optional | Captions, Kokoro voices, face tracking on-device; editing agent in the cloud (Pro) |
+| AI limits | 30 summaries/mo free, 200 on Team | Included in subscription | 1,000 credits/mo on Pro (about US$0.01 each), top-ups never expire |
+| Price |
+| Free tier | 30 Jams/mo, 5-min recordings | 14-day trial only | Record and edit free 2 free exports, then a licence |
+| Paid | Team US$14 / mo per creator, billed yearly | US$29 / mo monthly plan, third-party listings, Oct 2026 | Creator US$49 once (export) or Pro US$20 / mo (export + AI agent) |
+
+### Pick Jam if
+
+- You file bugs and want console and network logs attached automatically.
+- Your team lives in Jira, Linear or Slack.
+- You never need to polish the video.
+
+### Pick Screen Studio if
+
+- You are on a Mac and want the most refined look with the least effort.
+- You need camera background cutout, transcript editing or 4K upscaling.
+- You want a tool that has been shipping for years.
+
+### Pick ScreenForge if
+
+- You want to make the most of AI: type "cut the pauses, zoom on clicks, add music and narration" and have it done.
+- You want one cross-platform app for recording, editing, captions, voice-over, music and export, on Mac, Windows and Linux.
+- You want local-first, and are fine with a beta.
+
+## Sources
+
+jam.dev/pricing, jam.dev/mac, screen.studio, Screen Studio's ScreenCaptureKit guide, and the ScreenForge release notes. Screen Studio's price comes from third-party listings because its pricing page did not load; check before quoting. No speed benchmarks were run for this table. Spotted a mistake? Email license@screenforge.studio and it will be fixed.
+
+---
+
+# AI agents (MCP server)
+
+Source: https://screenforge.studio/agents
+
+AI agents
+
+## Record and edit from your own agent.
+
+MCP server · included with ScreenForge 0.1.66 or later · macOS and Linux
+
+In short
+
+ScreenForge comes with an MCP server. Connect Claude Code, Cursor, VS Code, Codex or any other MCP client, then ask it to record your screen and turn the recording into a finished video: cuts, speed, zooms, backgrounds, captions, narration and export.
+
+Everything runs on your computer. Your agent does the thinking, so ScreenForge uses none of its AI credits for this.
+
+- Step 1Install ScreenForgeGet it from the download page, or install it with Homebrew (below). The MCP server comes with the app.
+- Step 2Connect your agentInstall the Claude Code plugin, click a button below, or let the app do it: open the gear menu, then AI agents.
+- Step 3Ask for a videoFor example: “Record my screen while I demo the signup flow.” When you’re done: “Cut the pauses, zoom on my clicks, add captions and export it.”
+
+## 01Claude Code
+
+The plugin connects the server and adds a skill that teaches Claude how to record, edit, check its work and export. Run these inside Claude Code, one at a time. First add the marketplace:
+
+```
+/plugin marketplace add smartloop-labs/screenforge-plugins
+```
+
+Then install the plugin:
+
+```
+/plugin install screenforge@screenforge
+```
+
+With Homebrew (macOS and Linux), the tool is on your PATH as `screenforge-cli`:
+
+```
+$ brew install zot24/tap/screenforge
+```
+
+To add only the server, without the skill, run this in a terminal. On macOS, with the app in Applications:
+
+```
+$ claude mcp add --scope user screenforge -- /Applications/ScreenForge.app/Contents/MacOS/sf mcp
+```
+
+With Homebrew or Linux .deb:
+
+```
+$ claude mcp add --scope user screenforge -- screenforge-cli mcp
+```
+
+The plugin’s source is on GitHub.
+
+## 02Cursor and VS Code
+
+These buttons open the editor’s install prompt for a Mac with ScreenForge in Applications. On Linux, or with the app somewhere else, use the gear menu’s AI agents section, which fills in the right path.
+
+Add to Cursor Add to VS Code
+
+## 03Any other MCP client
+
+Add ScreenForge as a local stdio server. On macOS:
+
+```
+{
+  "mcpServers": {
+    "screenforge": {
+      "command": "/Applications/ScreenForge.app/Contents/MacOS/sf",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+On Linux, the command is `screenforge-cli` after installing the .deb, or `sf` in the folder you unpacked.
+
+## 04What your agent can do
+
+- Record a display, or the area around one window that follows it as it moves, with the microphone and system audio if you want them. It can pause, resume and add markers.
+- Import an MP4 or MOV, a Screen Studio project or a public Loom link, or open one of your ScreenForge projects.
+- Edit with the same tools as the editor built into the app: cuts, speed, zooms, masks, camera layouts, titles, transitions, chapters, music and every look setting. It can transcribe with Whisper and narrate with on-device voices.
+- Check and export: it renders a frame to look at its work before calling it done, then exports MP4, HEVC, ProRes, GIF or WebM, with a title, description and tags.
+
+Keep the project open in ScreenForge and you’ll see each edit appear as your agent makes it. `⌘Z` undoes it.
+
+## 05Permissions on macOS
+
+Recording needs Screen Recording permission. Click zooms and keystroke labels also need Input Monitoring. macOS gives these to the app that runs your agent, such as your terminal for Claude Code or Cursor for Cursor. Grant them in System Settings → Privacy & Security, then restart that app.
+
+The Windows version doesn’t include the MCP server yet. Questions? Get in touch.
+
+---
+
+# Privacy policy
+
+Source: https://screenforge.studio/privacy
+
+Legal
+
+## Privacy Policy
+
+Last updated 26 October 2026
+
+The short version
+
+ScreenForge runs on your computer. It contacts a server only when you press Activate or Buy, which send your email address (and, for Activate, a one-way device code), when you open a project on an activated computer, to check the license has not moved to another one, when you ask the AI agent for an edit, which sends the project's edit settings and transcript to Claude through our server, when you search Unsplash or Jamendo, when you import music from a link you paste, when you first make captions, which downloads a speech model and sends nothing about you, and once a day to ask GitHub whether a newer version is out, which you can turn off. There are no analytics and no crash reports. Your recordings, audio and exports never leave your computer unless you move them yourself.
+
+## 01What stays on your computer
+
+Everything the app makes: recordings, projects, the audio track, transcripts and captions, exports, and the license key once it has been activated. ScreenForge writes them to the folders you choose and reads them back. None of it is uploaded, synced or copied anywhere by the app, except what the AI agent needs when you use it (see below): never the video or the audio themselves.
+
+## 02When the app talks to a server
+
+These, and nothing else:
+
+- Activate sends the email you typed and a device code to the license server. The device code is a one-way hash (SHA-256) of the computer's hardware ID; the ID itself never leaves the computer. The first time on a computer, the server emails a 6-digit code to the license address, and the key is only returned once that code is entered, so knowing someone's email is not enough to use their license. The key is then verified on your computer, and the app does not need the server again.
+- Buy sends the email you typed to the license server to open a Stripe checkout page. The purchase itself happens on Stripe's site.
+- The AI agent, only when you send it a message, sends each request to Claude (Anthropic) through our server: your message, the project file (clips, zooms, masks, settings and names, not the video or audio), the words of the transcript with their times, where the playhead is and what is selected, and the conversation so far. Our server adds the Claude key, forwards the request and passes the answer back; it does not store your messages or project. It records, per device code and day, how many requests were made and what they cost, and takes the cost from your credits.
+- Unsplash: a background search sends the words you searched for to our server, which asks Unsplash and keeps the results for a few hours so the same search is answered without asking again. Choosing a photo downloads it into the project.
+- Jamendo: a music search in the Audio panel sends the words you searched for to our server, which asks Jamendo and keeps the results for a few hours. Choosing a track downloads it from Jamendo's servers into the project, with the artist and licence so you can credit them.
+- Import from a link downloads the audio file at the link you paste, straight from that site into the project. Nothing goes through our server, and nothing else is sent.
+- Generate transcript, the first time you use a speech model, downloads that model (142 MB or 466 MB) from our GitHub releases, or from Hugging Face if GitHub is unreachable. It is a plain file download: nothing about you or your recording is sent. The file is checked against a known checksum, kept on your computer, and not downloaded again. Transcription itself runs on your computer, and your audio never leaves it.
+- Narration, the first time you use an AI voice or press Download voice model, downloads the Kokoro voice model, its voices and pronunciation dictionaries (about 335 MB) from our GitHub releases, or from Hugging Face and GitHub's copy of the dictionaries if ours is unreachable. Like the speech models, it is a plain file download checked against known checksums and kept on your computer. The voice runs on your computer: a script read by one of these voices never leaves it. When the agent narrates, it writes the script itself, as part of the agent conversation described above.
+- ElevenLabs voices, only when you pick one in the Narration panel (or ask the agent for one), send the script of each take, the voice, the speed and your device code to our server, which adds the ElevenLabs key, asks ElevenLabs to read it, and passes the audio back; it counts how much each device code uses a day, to keep the free voices within a daily allowance. Our server does not store the script or the audio; the app saves the reading in your project, and each voice's short preview on your computer.
+- Enhance with ElevenLabs, only when you press Clean up voice-over or Re-voice on a voice-over you recorded, sends that recording (in pieces of about 40 seconds), the voice you picked and your device code to our server, which adds the ElevenLabs key, asks ElevenLabs to clean it up or re-voice it, and passes the audio back; it counts how much each device code uses a day, to keep the free voices within a daily allowance. Our server does not store the recording or the result; the app saves the result in your project next to the recording, which it keeps.
+- My voice, only when you press Make my voice under Narration and confirm it is your own voice, sends the voice-overs you picked (up to 3 minutes) and your device code to our server, which asks ElevenLabs to make a clone of your voice. ElevenLabs keeps the clone so narration can speak in it; we keep its id, when you agreed, and the license email it belongs to, not the recordings. Delete my voice deletes the clone at ElevenLabs and our record of it.
+- Update check: at launch, at most once a day, the app asks GitHub's public releases API for the newest version number, and shows "Update available" when it is newer than yours. It is one plain request with no account, no identifier and nothing about you or your projects; GitHub sees it like any other visit. Turn it off with Check automatically in the toolbar's settings menu; Check for updates now does the same once, on request. Updating is up to you: the app only opens the release page.
+
+All of them go over HTTPS. Apart from the update check, opening the app, recording, editing by hand, captioning with a model you already have, and exporting make no network requests at all.
+
+## 03What we keep
+
+If you buy a license: the email address you paid with, the plan, and the key issued to it, plus the device code of the computer the license is active on and when it was last used. That record exists so the key can be resent or refunded and kept to one computer. Pending activation codes are stored only as hashes and expire after 15 minutes. For the AI agent: the credit balance of your license email and a list of what added or used credits (purchases, monthly grants, and each request's cost), and per device code and day the number of agent requests and ElevenLabs readings and their cost. If you make your voice: the ElevenLabs id of its clone, how many seconds it was made from, and when you agreed that it is your own voice, until you delete it. We do not keep your messages to the agent, a profile, or the recordings you make.
+
+## 04Who else is involved
+
+- Stripe processes the payment. Your card details go to Stripe, never to us; see Stripe's privacy policy.
+- Resend delivers the license email and the activation codes. It sees your address and what is in the message it sends; see Resend's privacy policy.
+- Supabase hosts the license server and its database.
+- Anthropic runs Claude, the model behind the AI agent. It receives what the agent sends, as described above, under its commercial terms, under which API data is not used to train its models; see Anthropic's privacy policy.
+- ElevenLabs reads the narration scripts sent to it for the ElevenLabs voices, the voice-overs you ask it to clean up or re-voice, and the recordings you make your voice from, as described above, and keeps your voice's clone until you delete it; it sees the audio, not who you are; see ElevenLabs' privacy policy.
+- Unsplash provides the background photos. It sees the searches our server makes for you, not who made them; downloading a photo comes from its image servers; see Unsplash's privacy policy.
+- Jamendo provides the Creative Commons music. It sees the searches our server makes for you, not who made them; downloading a track comes from its storage servers; see Jamendo's privacy policy.
+- Google Analytics counts visits to this website: pages viewed, referrer, and approximate location and device, using a cookie in your browser. It runs on the website only, never in the app. Blocking it does not affect anything; see Google's privacy policy.
+- GitHub hosts the source, the release downloads and the speech models. The download page asks GitHub's public API which release is newest; that request, like a model download, carries no data about you beyond what any web request does.
+- Hugging Face hosts the original whisper.cpp speech models and the Kokoro voice model. The app downloads from it only if our GitHub copy is unreachable, and sends nothing beyond what any web request does; see Hugging Face's privacy policy.
+
+## 05What we do not do
+
+- No telemetry, usage analytics or crash reporting in the app. The website uses Google Analytics only, as described above.
+- No install counters. The device code is sent only for activation, the AI agent and ElevenLabs requests, as described above. The only request at launch is the daily update check, which carries nothing about you and can be turned off.
+- No selling, sharing or transferring your data, ever.
+- No account. We hold no record that you exist until you buy a key or use the AI agent, and then only what is listed above.
+
+## 06Deleting your data
+
+Email license@screenforge.studio from the address you paid with and the license record is deleted. The key stops working once it is gone, so ask after a refund rather than before.
+
+## 07Changes and contact
+
+This policy may change; the date above will change with it. Questions: license@screenforge.studio. ScreenForge is published by Smartloop Inc.
+
+---
+
+# Terms
+
+Source: https://screenforge.studio/terms
+
+Legal
+
+## Terms of Service
+
+Last updated 23 October 2026
+
+The short version
+
+ScreenForge is proprietary software from Smartloop Inc, provided as-is. Recording and editing are free; an export license is one key per person. Refunds within 24 hours; for Pro and top-ups, only before their credits are used. ScreenForge is an independent project and is not affiliated with any other screen-recording product.
+
+## 01Agreement
+
+These terms cover the ScreenForge app, the license service and this website. Installing or running the app means you accept them. If you do not, do not use it.
+
+## 02Software license
+
+ScreenForge is owned by Smartloop Inc and licensed, not sold. You may install and use the app on computers you own or control. You may not copy, modify, redistribute, sell or sublicense it, reverse engineer it except where the law allows, or remove or bypass its license checks. Versions released earlier under the Apache License 2.0 remain under that license.
+
+## 03Export license keys
+
+- A key is issued to one email address and is for one person. Use it on every computer you own; do not share, resell or publish it.
+- A key is a one-time purchase: it never expires and covers every future version of the app.
+- Monthly keys sold before 14 October 2026 stay valid while that subscription is active. Cancel any time; the key keeps working to the end of the period you paid for.
+- We may revoke a key that has been shared publicly or obtained by fraud.
+
+## 04Refunds
+
+- Creator license: refundable within 24 hours, no reason needed. The key stops working once refunded.
+- Pro and top-ups: refundable within 24 hours of the payment (renewals included), only if none of its agent credits have been used.
+- Cancel Pro any time; it keeps working to the end of the paid month.
+
+Email license@screenforge.studio from the address you paid with.
+
+## 05No warranty
+
+The software is provided "as is", without warranties or conditions of any kind, express or implied. In practice: this is early software. A recording can fail, an export can come out wrong and a project file can be misread. Keep what matters and check exports before you rely on them.
+
+## 06Limitation of liability
+
+To the fullest extent the law allows, Smartloop Inc, the maintainers and contributors are not liable for any damages arising from your use of ScreenForge, including lost recordings, lost or corrupted data, lost profits or business interruption.
+
+## 07Third-party services
+
+Payments run through Stripe and the license email through Resend, each under its own terms. If a key cannot be issued because one of those services fails, we will issue it by hand or refund you.
+
+## 08Trademarks and affiliation
+
+ScreenForge is an independent product. It can import `.screenstudio` project files, but it is not affiliated with, endorsed by or sponsored by any other screen-recording product, and includes none of their code or assets. Apple, macOS and Apple silicon are trademarks of Apple Inc.
+
+## 09Governing law
+
+These terms are governed by the laws of the State of California, without regard to its conflict-of-law rules. Any dispute is to be brought in the state or federal courts located in California.
+
+## 10Changes and contact
+
+These terms may be revised; the date above will change with them. Continuing to use ScreenForge after a revision means accepting it. ScreenForge is published by Smartloop Inc. Questions: license@screenforge.studio.
