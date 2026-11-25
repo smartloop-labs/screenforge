@@ -4674,7 +4674,7 @@ dependencies = [
 
 [[package]]
 name = "sf-agent"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -4687,7 +4687,7 @@ dependencies = [
 
 [[package]]
 name = "sf-cli"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4715,7 +4715,7 @@ dependencies = [
 
 [[package]]
 name = "sf-engine"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "glam",
  "serde",
@@ -4726,7 +4726,7 @@ dependencies = [
 
 [[package]]
 name = "sf-export"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "sf-engine",
@@ -4739,7 +4739,7 @@ dependencies = [
 
 [[package]]
 name = "sf-license"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4754,7 +4754,7 @@ dependencies = [
 
 [[package]]
 name = "sf-media"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -4767,7 +4767,7 @@ dependencies = [
 
 [[package]]
 name = "sf-project"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4782,7 +4782,7 @@ dependencies = [
 
 [[package]]
 name = "sf-recording"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -4819,7 +4819,7 @@ dependencies = [
 
 [[package]]
 name = "sf-render"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -4837,7 +4837,7 @@ dependencies = [
 
 [[package]]
 name = "sf-services"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4858,7 +4858,7 @@ dependencies = [
 
 [[package]]
 name = "sf-session"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4878,7 +4878,7 @@ dependencies = [
 
 [[package]]
 name = "sf-transcribe"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "directories",
@@ -4893,7 +4893,7 @@ dependencies = [
 
 [[package]]
 name = "sf-tts"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "ort",
@@ -4905,7 +4905,7 @@ dependencies = [
 
 [[package]]
 name = "sf-vision"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "image",
@@ -5137,7 +5137,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "studio"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
