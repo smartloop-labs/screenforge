@@ -17,8 +17,10 @@ sf-tts.workspace = true
 base64 = "0.22"
 chrono.workspace = true
 directories.workspace = true
+image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 tracing.workspace = true
 ureq = "2"
 

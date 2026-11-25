@@ -1,7 +1,7 @@
 //! AI voice narration for the Narration panel and the agent: downloading the voice model,
 //! previewing a voice, and reading text into voice-over takes (with their words for captions),
 //! off the UI thread. Kokoro's voices are read on this computer; ElevenLabs' online through the
-//! backend's `voice` function, paid in credits. This is the part without UI, shared by the app
+//! backend's `voice` function, free for everyone. This is the part without UI, shared by the app
 //! and `sf mcp`.
 
 use std::path::{Path, PathBuf};
@@ -57,38 +57,6 @@ pub fn refresh_cloud_voices() {
     });
 }
 
-/// The balance the last ElevenLabs reading left (the backend's `credits` summary), for the agent
-/// panel's credits chip; taken by [`take_credits`].
-static CREDITS: Mutex<Option<serde_json::Value>> = Mutex::new(None);
-
-pub fn take_credits() -> Option<serde_json::Value> {
-    CREDITS.lock().ok()?.take()
-}
-
-/// Keep the balance an ElevenLabs reply (`sf_credits`) left, for the credits chip.
-pub fn note_credits(reply: &serde_json::Value) {
-    if let Some(c) = reply.get("sf_credits").filter(|c| c.is_object()) {
-        if let Ok(mut slot) = CREDITS.lock() {
-            *slot = Some(c.clone());
-        }
-    }
-}
-
-/// May this computer use the ElevenLabs voices (Pro, staff or trial credits, as the backend
-/// decides)? `None` until the agent panel has checked the plan; the backend refuses anyway.
-static CLOUD_ALLOWED: Mutex<Option<bool>> = Mutex::new(None);
-
-pub fn set_cloud_allowed(allowed: Option<bool>) {
-    if let Ok(mut a) = CLOUD_ALLOWED.lock() {
-        *a = allowed;
-    }
-}
-
-/// The ElevenLabs voices are known to be unavailable here (not Pro).
-pub fn cloud_locked() -> bool {
-    CLOUD_ALLOWED.lock().ok().and_then(|a| *a) == Some(false)
-}
-
 /// A take read into the project's voice-over folder.
 
 /// Read `text` with `voice` into `project`'s voice-over folder, with its words saved as the
@@ -120,7 +88,7 @@ pub fn speak_into(project: &Path, text: &str, voice: &str, speed: f64, language:
     Ok(sf_agent::host::Spoken { file_name: name, duration_ms: speech.duration_ms() })
 }
 
-/// Read `text` with ElevenLabs voice `voice` through the backend (which charges the credits),
+/// Read `text` with ElevenLabs voice `voice` through the backend (free; it keeps a daily allowance),
 /// in `language` (`None`: ElevenLabs tells from the text).
 fn cloud_speak(text: &str, voice: &str, speed: f64, language: Option<&str>) -> Result<sf_tts::Speech, String> {
     let device = sf_license::device_id().ok_or("ElevenLabs voices need this computer's id, which could not be read")?;
@@ -134,7 +102,6 @@ fn cloud_speak(text: &str, voice: &str, speed: f64, language: Option<&str>) -> R
     } else {
         sf_license::call_backend_within("voice", body, 180)?
     };
-    note_credits(&reply);
     use base64::Engine;
     let pcm = base64::engine::general_purpose::STANDARD.decode(reply["audio"].as_str().ok_or("ElevenLabs returned no audio")?).map_err(|e| e.to_string())?;
     let alignment = sf_tts::cloud::Alignment::from_json(&reply["alignment"]);

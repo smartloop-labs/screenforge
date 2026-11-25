@@ -1,5 +1,5 @@
 //! ElevenLabs voices, read online through the backend's `voice` function (which holds the key
-//! and charges credits): the voices the editor offers, and turning a reply (16-bit PCM at
+//! and keeps a daily allowance; the voices are free): the voices the editor offers, and turning a reply (16-bit PCM at
 //! 24 kHz and ElevenLabs' character timing) into a [`Speech`] with its words for captions.
 
 use std::sync::RwLock;
@@ -215,12 +215,6 @@ pub fn language(code: &str) -> Option<&'static Language> {
     LANGUAGES.iter().find(|l| l.code == code)
 }
 
-/// Credits a reading of `chars` characters costs (ElevenLabs v4 at US$0.08 per 1,000
-/// characters, 1 credit = US$0.01); the backend charges what it is set to, this is for the panel.
-pub fn credits_for(chars: usize) -> f64 {
-    chars as f64 * 0.008
-}
-
 /// ElevenLabs' character timing of a reading (the `alignment` of a `with-timestamps` reply).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Alignment {
@@ -348,7 +342,6 @@ mod tests {
     #[test]
     fn ids_do_not_clash_with_kokoro() {
         assert!(BUILT_IN.iter().all(|c| crate::voice(c.id).is_none()));
-        assert!((credits_for(1000) - 8.0).abs() < 1e-9);
     }
 
     #[test]

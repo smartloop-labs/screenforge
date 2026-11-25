@@ -1,33 +1,37 @@
-// Cloud share links, a Pro feature: the app uploads a video to R2 and gets a link to the page
+// Cloud share links, free for every computer (no license or sign-in needed): the app uploads a video to R2 and gets a link to the page
 // at screenforge.studio/s/<id> (Cloudflare Pages Function in functions/s/[id].js) that plays it.
 //
-// The owner's actions carry { device, key }: the license key this computer holds, signed for it
-// (see `verifyKey`), and the computer must still be the license's active one. A device id alone
-// is not enough, since device ids are not secret.
+// A link belongs to the export's computer. The owner's actions carry { device, key? }: with the
+// license key this computer holds, signed for it (see `verifyKey`) and still the license's
+// active computer, the links are the license's (`email`); without one they are the computer's
+// own (`device:<id>` in `email`), so a computer that never signed in shares too. Device ids are
+// SHA-256 hashes the app sends only here, but they are not secrets: whoever knows one can list
+// and delete that computer's own links (never a license's).
 //
-//   { action: "create", device, key, project?, title, description?, tags?, bytes, poster?, width?, height?, duration_ms? }
-//       Pro only → { id, url, upload: { video, poster? } }: presigned PUT URLs (video/mp4, and
+//   { action: "create", device, key?, project?, title, description?, tags?, bytes, poster?, width?, height?, duration_ms? }
+//       → { id, url, upload: { video, poster? } }: presigned PUT URLs (video/mp4, and
 //       image/jpeg for the poster) the app uploads to, signed for exactly `bytes` / `poster` bytes.
 //       A project has one link: sharing it again uploads over the same link (same URL), whose
 //       page keeps the old video until the new one is complete.
 //   { action: "complete", device, key, id }  → { id, url } once the upload is in R2 at its size
-//   { action: "allowed", device, key }       → { allowed }: may make links (Pro or staff)
-//   { action: "list", device, key }          → { links: [...] } newest first (also after Pro ends)
+//   { action: "allowed", device, key }       → { allowed: true }: every computer may (apps up to 0.1.67 ask)
+//   { action: "list", device, key }          → { links: [...] } newest first (a license's also after it ends)
 //   { action: "delete", device, key, id }    → { ok: true }: the link and its files are gone
 //   { action: "get", id }                    → public: what the share page shows (404: none)
 //   { action: "view", id }                   → public: counts a view
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { cors, db, isActivated, isDevice, json } from "../_shared/activation.ts";
-import { proOrStaff } from "../_shared/credits.ts";
 import { verifyKey } from "../_shared/license.ts";
 import { configured, deleteObject, MEDIA_URL, objectSize, posterKey, presignPut, videoKey } from "../_shared/r2.ts";
 
 const PAGE_URL = (Deno.env.get("SHARE_PAGE_URL") ?? "https://screenforge.studio/s/").replace(/\/?$/, "/");
 /** Largest video one link may hold (default 2 GiB). */
 const MAX_BYTES = Number(Deno.env.get("SHARE_MAX_BYTES") ?? String(2 * 1024 ** 3));
-/** Storage one account may use across its links (default 100 GiB). */
+/** Storage one account may use across its links (default 100 GiB), and one computer without a
+ * license (default 10 GiB). */
 const MAX_ACCOUNT_BYTES = Number(Deno.env.get("SHARE_MAX_ACCOUNT_BYTES") ?? String(100 * 1024 ** 3));
+const MAX_DEVICE_BYTES = Number(Deno.env.get("SHARE_MAX_DEVICE_BYTES") ?? String(10 * 1024 ** 3));
 const MAX_POSTER_BYTES = 2 * 1024 * 1024;
 
 const fail = (error: string, status: number, code?: string) => json({ error, ...(code ? { code } : {}) }, status);
@@ -58,14 +62,17 @@ async function linkIdFor(project: string): Promise<string> {
   return Array.from(d.slice(0, 12), (b) => abc[b % 62]).join("");
 }
 
-/** The license email of the computer making the request, or an error reply. */
+/** Who owns the links of the computer making the request: its license's email when it sends
+ * the key signed for it and is still that license's active computer, else the computer itself
+ * (`device:<id>`). An error reply only without a device. */
 async function owner(client: SupabaseClient, device: unknown, key: unknown): Promise<string | Response> {
   if (!isDevice(device)) return fail("device required", 400);
   const p = await verifyKey(key);
-  if (!p || p.device !== device) return fail("Sign in to ScreenForge on this computer first (Export → Sign in).", 401, "sign_in");
-  const email = p.email.toLowerCase();
-  if (!(await isActivated(client, email, device))) return fail("This license is active on another computer now. Sign in again to use it here.", 401, "sign_in");
-  return email;
+  if (p && p.device === device) {
+    const email = p.email.toLowerCase();
+    if (await isActivated(client, email, device)) return email;
+  }
+  return `device:${device}`;
 }
 
 async function removeLink(client: SupabaseClient, id: string) {
@@ -99,15 +106,14 @@ serve(async (req) => {
         return json({ ok: true });
       }
       case "allowed": {
-        // may this computer's account make links (Pro or staff)? The app asks once per license
+        // every computer may make links; apps up to 0.1.67 ask before offering them
         const email = await owner(client, body.device, body.key);
         if (email instanceof Response) return email;
-        return json({ allowed: await proOrStaff(client, email) });
+        return json({ allowed: true });
       }
       case "create": {
         const email = await owner(client, body.device, body.key);
         if (email instanceof Response) return email;
-        if (!(await proOrStaff(client, email))) return fail("Share links are part of Pro. Upgrade to get a link for every recording.", 402, "pro_required");
         const bytes = Number(body.bytes);
         if (!Number.isInteger(bytes) || bytes <= 0) return fail("bytes required", 400);
         if (bytes > MAX_BYTES) return fail(`That video is ${(bytes / 1024 ** 3).toFixed(1)} GB; a share link holds up to ${(MAX_BYTES / 1024 ** 3).toFixed(0)} GB. Export at a lower resolution or compression and share again.`, 413);
@@ -130,7 +136,8 @@ serve(async (req) => {
         const { data: used } = await client.from("share_links").select("id, bytes").eq("email", email);
         // a replaced video's old size no longer counts
         const total = (used ?? []).filter((r) => r.id !== existing?.id).reduce((n, r) => n + Number(r.bytes), 0);
-        if (total + bytes > MAX_ACCOUNT_BYTES) return fail(`Your share links use ${(total / 1024 ** 3).toFixed(1)} GB of ${(MAX_ACCOUNT_BYTES / 1024 ** 3).toFixed(0)} GB. Contact ScreenForge support to remove old links, then try again.`, 413);
+        const room = email.startsWith("device:") ? MAX_DEVICE_BYTES : MAX_ACCOUNT_BYTES;
+        if (total + bytes > room) return fail(`Your share links use ${(total / 1024 ** 3).toFixed(1)} GB of ${(room / 1024 ** 3).toFixed(0)} GB. Contact ScreenForge support to remove old links, then try again.`, 413);
         const int = (v: unknown) => (Number.isInteger(v) && (v as number) > 0 && (v as number) < 2 ** 31 ? v as number : null);
         // the export's details: a description (chapters at its end) and tags; an app without
         // them sends none, which leaves what a link had

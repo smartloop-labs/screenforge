@@ -1,10 +1,13 @@
 // What `voice` (narration read from a script) and `voice-enhance` (a recorded voice-over cleaned
-// up or re-voiced) share: the app's ElevenLabs voice ids, and the gate and charge every
-// ElevenLabs request goes through. Paid in agent credits (credits.ts): a request needs Pro (or
-// staff, or trial credits) and a positive balance, its cost is taken after ElevenLabs answers,
-// and it counts towards the agent's daily caps (agent_usage), the backstop on everything we pay.
+// up or re-voiced) share: the app's ElevenLabs voice ids, and the gate and usage count every
+// ElevenLabs request goes through. ElevenLabs is free for everyone, with or without a license:
+// no plan is asked for and no credits are taken (credits pay for the agent only). What a
+// request costs us is counted per computer and day (voice_usage), and the daily caps on that
+// are the only limit: ELEVENLABS_DEVICE_DAILY_USD per computer, ELEVENLABS_TOTAL_DAILY_USD for
+// everyone together (0 turns a cap off). They are apart from the agent's caps, so narration
+// never uses up the agent's day.
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-import { MONTHLY_CREDITS, Payer, payerFor, remaining, summary, TRIAL_CREDITS } from "./credits.ts";
+import { Payer, payerFor } from "./credits.ts";
 
 export const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 export const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -105,12 +108,25 @@ export const MY_VOICE = "my_voice";
 /** A voice the app may ask for: one of VOICES, or the user's own. */
 export const isVoice = (voice: unknown): voice is string => typeof voice === "string" && (voice in VOICES || voice === MY_VOICE);
 
-/** ElevenLabs' id for `voice` (see [`isVoice`]) as `payer` may use it; or the response refusing it. */
-export async function voiceIdFor(db: SupabaseClient, payer: Payer, voice: string): Promise<string | Response> {
+/** Who a computer's clone belongs to, as `voice_clones.email` holds it: the license email when
+ * the computer is signed in, and always the computer itself (`device:<id>`), which owns the
+ * clone made without a license. The first is where a new clone goes. */
+export const cloneOwners = (payer: Payer, device: string): string[] => [...(payer.email ? [payer.email.toLowerCase()] : []), `device:${device}`];
+
+/** The clone row of the first of `owners` that has one. */
+export async function cloneOf(db: SupabaseClient, owners: string[]) {
+  for (const owner of owners) {
+    const { data } = await db.from("voice_clones").select("*").eq("email", owner).maybeSingle();
+    if (data) return data;
+  }
+  return null;
+}
+
+/** ElevenLabs' id for `voice` (see [`isVoice`]) as this computer may use it; or the response refusing it. */
+export async function voiceIdFor(db: SupabaseClient, payer: Payer, device: string, voice: string): Promise<string | Response> {
   if (voice !== MY_VOICE) return VOICES[voice];
-  if (!payer.email) return fail("My voice needs ScreenForge Pro activated on this computer.", 402, { code: "pro_required" });
-  const email = payer.email.toLowerCase();
-  const { data } = await db.from("voice_clones").select("voice_id").eq("email", email).maybeSingle();
+  const data = await cloneOf(db, cloneOwners(payer, device));
+  const email = data?.email;
   if (!data) return fail("You have not made your voice yet. Create it under Narration → My voice.", 404, { code: "no_clone" });
   // put away by the cleanup (my-voice): the app makes it again from its recordings and retries
   if (!data.voice_id) return fail("Your voice was put away after a while unused. Make it again under Narration → My voice.", 409, { code: "voice_parked" });
@@ -120,51 +136,30 @@ export async function voiceIdFor(db: SupabaseClient, payer: Payer, voice: string
   return data.voice_id;
 }
 
-const DEVICE_DAILY_USD = Number(Deno.env.get("AGENT_DEVICE_DAILY_USD") ?? "0");
-const TOTAL_DAILY_USD = Number(Deno.env.get("AGENT_TOTAL_DAILY_USD") ?? "20");
+/** What one computer may use a day, US$ at ElevenLabs' list price (default 1: about 12,500
+ * characters, a quarter of an hour of narration), and everyone together. */
+const DEVICE_DAILY_USD = Number(Deno.env.get("ELEVENLABS_DEVICE_DAILY_USD") ?? "1");
+const TOTAL_DAILY_USD = Number(Deno.env.get("ELEVENLABS_TOTAL_DAILY_USD") ?? "20");
 
 export const isDevice = (device: unknown): device is string => typeof device === "string" && /^[0-9a-f]{64}$/.test(device);
 
-const outOfCredits = (p: Payer) =>
-  p.pro
-    ? "This month's credits are used up. Top up to keep using ElevenLabs, or pick a voice that runs on this computer."
-    : `You're out of credits. Top up, or upgrade to Pro for ${MONTHLY_CREDITS.toLocaleString("en-US")} credits a month.`;
-
-/** The database, and who pays for `device`'s request; or the response refusing it. */
+/** The database, and the account `device` is signed in to (which owns its clone); or the
+ * response refusing the request, which only the daily caps do. */
 export async function gate(device: string): Promise<{ db: SupabaseClient; payer: Payer } | Response> {
   const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", { auth: { persistSession: false } });
-  const { data: today, error: usageError } = await db.rpc("agent_usage_today", { p_device: device }).maybeSingle();
+  const { data: today, error: usageError } = await db.rpc("voice_usage_today", { p_device: device }).maybeSingle();
   if (usageError) return fail(usageError.message, 500);
   // deno-lint-ignore no-explicit-any
   const spent = today as any;
-  if (DEVICE_DAILY_USD > 0 && Number(spent?.device_usd ?? 0) >= DEVICE_DAILY_USD) return fail("Today's allowance on this computer is used up. It starts again tomorrow.", 402);
-  if (TOTAL_DAILY_USD > 0 && Number(spent?.total_usd ?? 0) >= TOTAL_DAILY_USD) return fail("ElevenLabs is very busy today. Please try again tomorrow.", 503);
-  const payer = await payerFor(db, device);
-  if (!payer.allowed) {
-    return fail(`ElevenLabs is part of Pro: US$20/month for ${MONTHLY_CREDITS.toLocaleString("en-US")} credits a month, shared with the agent. Already on Pro? Activate it with your email in Export.`, 402, { code: "pro_required", sf_credits: summary(payer) });
-  }
-  if (remaining(payer) <= 0) return fail(outOfCredits(payer), 402, { code: "no_credits", sf_credits: summary(payer) });
-  return { db, payer };
+  if (DEVICE_DAILY_USD > 0 && Number(spent?.device_usd ?? 0) >= DEVICE_DAILY_USD) return fail("Today's ElevenLabs allowance on this computer is used up. It starts again tomorrow; the voices on this computer keep reading.", 429, { code: "daily_limit" });
+  if (TOTAL_DAILY_USD > 0 && Number(spent?.total_usd ?? 0) >= TOTAL_DAILY_USD) return fail("ElevenLabs is very busy today. Please try again tomorrow, or pick a voice that runs on this computer.", 503);
+  return { db, payer: await payerFor(db, device) };
 }
 
-/** Take `usd` (at 1 credit = US$0.01) from `payer` for `device`; `ref` keeps a retried
- * request from being charged twice. Returns the credits charged; `payer` is updated. */
-export async function charge(db: SupabaseClient, device: string, payer: Payer, usd: number, ref: string): Promise<number> {
-  const { error } = await db.rpc("agent_usage_add", { p_device: device, p_cost: usd });
-  if (error) console.error("agent_usage_add", error.message);
-  const credits = usd * 100;
-  if (payer.email) {
-    const { data, error: spendError } = await db.rpc("credits_spend", { p_email: payer.email, p_credits: credits, p_ref: ref }).maybeSingle();
-    if (spendError) console.error("credits_spend", spendError.message);
-    // deno-lint-ignore no-explicit-any
-    const b = data as any;
-    if (b) Object.assign(payer, { monthly: Number(b.monthly), topup: Number(b.topup) });
-  } else {
-    const { data, error: trialError } = await db.rpc("credits_trial_spend", { p_device: device, p_credits: credits });
-    if (trialError) console.error("credits_trial_spend", trialError.message);
-    payer.trial = Math.max(TRIAL_CREDITS - Number(data ?? 0), 0);
-  }
-  return credits;
+/** Count `usd` (what the request cost us) towards `device`'s day. Nothing is charged. */
+export async function count(db: SupabaseClient, device: string, usd: number): Promise<void> {
+  const { error } = await db.rpc("voice_usage_add", { p_device: device, p_cost: usd });
+  if (error) console.error("voice_usage_add", error.message);
 }
 
 /** An ElevenLabs reply that is not 2xx, as the app's error. */
@@ -208,5 +203,3 @@ export function wavSeconds(b: Uint8Array): number | string {
   }
   return "audio has no samples";
 }
-
-export { summary };

@@ -2,6 +2,8 @@
 //! Code, Codex, Cursor …) can record and edit ScreenForge projects. No AI runs here and no
 //! tokens are spent by ScreenForge: the editing tools are the same ones the app's assistant
 //! uses (`sf_agent::tools`), plus recording, importing, rendering a frame and exporting.
+//! Everything is free except `export`, which has the app's pay gate ([`export_allowed`]): the
+//! computer's free exports, then a license. An export is uploaded and answered with its link.
 //!
 //! ```text
 //! claude mcp add screenforge -- sf mcp
@@ -52,7 +54,7 @@ How to edit:
 - Zooms, masks and camera layouts each sit on one lane and cannot overlap. Zoom gently: 1.3–1.5× for text and typing, about 2× only for a small detail; a few seconds each.
 - Settings (background, padding, corners, shadow, cursor, camera, captions, audio, aspect ratio) are changed with patch_project; get_options lists the values and where each setting lives, get_config shows current values.
 - \"Auto edit\" / tighten: with a transcript cut long pauses and filler words; speed up stretches where nothing is said or clicked (2–4×); add zooms around the clicks (add_auto_zooms) if there are none.
-- render_frame shows the finished look (background, zoom, captions) at a time: use it to check your work. export writes the video file; pass it a title, description and tags you write (ScreenForge has no model of its own here to write them).
+- render_frame shows the finished look (background, zoom, captions) at a time: use it to check your work. export writes the video file, uploads it and returns its link (a page anyone can watch: give it to the user); pass it a title, description and tags you write (ScreenForge has no model of its own here to write them). Export is the one paid step: a computer without a license has a few free exports, and when they are used the tool says how to get Pro or Creator; tell the user that rather than trying again.
 - undo_answers reverts your earlier edits in this session.";
 
 /// A project the server has open.
@@ -329,6 +331,8 @@ impl Server {
     }
 
     fn export(&mut self, path: &Path, args: &Value, progress: &Value) -> Result<Vec<Value>> {
+        // the pay gate first: nothing is rendered for an export that may not be made
+        let free = export_allowed()?;
         let codec = match args["format"].as_str().unwrap_or("mp4") {
             "mp4" | "h264" => sf_media::VideoCodec::H264,
             "hevc" => sf_media::VideoCodec::Hevc,
@@ -370,7 +374,36 @@ impl Server {
         let details = written_details(args, &input);
         let dtxt = sf_export::details_txt_path(&result);
         std::fs::write(&dtxt, details.to_text())?;
-        let mut out = json!({ "file": result, "seconds": started.elapsed().as_secs(), "details": dtxt });
+        let mut out = json!({ "file": result, "file_url": file_url(&result), "seconds": started.elapsed().as_secs(), "details": dtxt });
+        if free {
+            // counted once the file is written (kept on this computer until the server hears)
+            match sf_license::record_free_export() {
+                Ok(left) => out["free_exports_left"] = json!(left),
+                Err(e) => tracing::warn!("free export not counted yet: {e}"),
+            }
+        }
+        // the link: the page that plays the video, which takes the MP4 every browser plays
+        let share = args["share"].as_bool().unwrap_or(true);
+        if share && codec != sf_media::VideoCodec::H264 {
+            out["link_note"] = json!("No link: a share link plays MP4 (H.264). Export with format mp4 to get one.");
+        } else if share {
+            let meta = sf_services::share::Meta { title: details.title.clone(), description: details.description.clone(), tags: details.tags.clone() };
+            let uploading = |f: f32| {
+                if !progress.is_null() {
+                    send(&json!({ "jsonrpc": "2.0", "method": "notifications/progress", "params": { "progressToken": progress, "progress": (f * 100.0).round(), "total": 100, "message": "Uploading" } }));
+                }
+            };
+            match sf_services::share::upload_file(path, &result, &meta, &std::sync::atomic::AtomicBool::new(false), &uploading) {
+                Ok(shared) => {
+                    out["link"] = json!(shared.url);
+                    if let Some(v) = shared.video {
+                        out["video_url"] = json!(v);
+                    }
+                }
+                // the file is written all the same
+                Err(e) => out["link_error"] = json!(format!("The video was exported, but no link was made: {e}")),
+            }
+        }
         if !details.by_ai {
             out["note"] = json!(if details.description.trim().is_empty() {
                 "The details file has no description (there is no transcript to start one from). Write a title, description and tags from what the video shows and call export again with them."
@@ -380,6 +413,46 @@ impl Server {
         }
         Ok(vec![text(out.to_string())])
     }
+}
+
+/// The export pay gate, as the app's Export dialog has it: a license on this computer exports
+/// (`Ok(false)`); without one the computer has [`sf_license::FREE_EXPORTS`] free exports, counted
+/// by the server (`Ok(true)`: this export is one of them, to be recorded when it is written).
+/// The error says how to keep exporting.
+fn export_allowed() -> Result<bool> {
+    let mut license = sf_license::saved_status();
+    if matches!(license, sf_license::Status::Expired(_)) {
+        // a monthly key that renewed since the app last ran
+        let _ = sf_license::check_in();
+        license = sf_license::saved_status();
+    }
+    if license.is_valid() {
+        return Ok(false);
+    }
+    match sf_license::free_exports_left() {
+        Ok(left) if left > 0 => Ok(true),
+        Ok(_) => Err(anyhow!(
+            "Export needs a license: the {} free exports on this computer are used. Pro ({}) exports without limit and includes the AI agent in the app; Creator ({}) exports without limit. The user can buy either at {} or in the ScreenForge app (Export), sign in there with the email used at checkout, then export again. Recording and editing stay free.",
+            sf_license::FREE_EXPORTS,
+            sf_license::PRICE_PRO,
+            sf_license::PRICE_LIFETIME,
+            sf_license::PURCHASE_URL
+        )),
+        Err(e) => Err(anyhow!("Without a license, export needs the license server to count this computer's free exports, and it did not answer: {e}")),
+    }
+}
+
+/// `path` as a file:// link.
+fn file_url(path: &Path) -> String {
+    let p = path.to_string_lossy().replace('\\', "/");
+    let mut url = String::from(if p.starts_with('/') { "file://" } else { "file:///" });
+    for b in p.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' | b':' => url.push(b as char),
+            _ => url.push_str(&format!("%{b:02X}")),
+        }
+    }
+    url
 }
 
 /// Transcribe the project with Whisper on this computer: the number of words.
@@ -494,7 +567,7 @@ pub fn tool_list() -> Vec<Value> {
         },
         {
             "name": "export",
-            "description": "Export the edited video to a file (default: next to the project, named after it). Takes about as long as the video for 1080p60. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here.",
+            "description": "Export the edited video to a file (default: next to the project, named after it), upload it and return its link: `link` is the page anyone can watch (screenforge.studio/s/…, the same link every time the project is exported), `file` and `file_url` the file on this computer. Give the user the link. Takes about as long as the video for 1080p60, plus the upload. Export is the one paid step: without a license a computer has a few free exports (free_exports_left in the result), then the tool answers with how to get Pro or Creator. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -505,6 +578,7 @@ pub fn tool_list() -> Vec<Value> {
                     "fps": { "type": "number", "description": "Default 60" },
                     "quality": { "type": "number", "description": "0.1–1, default 0.85" },
                     "no_audio": { "type": "boolean" },
+                    "share": { "type": "boolean", "description": "Upload the video and return its link (default true; mp4 only). false: only the file" },
                     "range": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[start_ms, end_ms] of the timeline only" },
                     "title": { "type": "string", "description": "Title for the details file (e.g. a YouTube title, under 70 characters). Default: the project name" },
                     "description": { "type": "string", "description": "Description for the details file: a few sentences on what the video shows. The chapter list is added under it. Default: the transcript's opening, or empty without a transcript" },
@@ -561,6 +635,12 @@ mod tests {
         assert_eq!(d.title, "Edit videos from Claude Code");
         assert_eq!(d.description, "Claude records the screen.\n\nChapters\n00:00 Intro\n00:12 Export");
         assert_eq!(d.tags, vec!["mcp", "claude code"]);
+    }
+
+    #[test]
+    fn file_links_escape_what_a_url_cannot_hold() {
+        assert_eq!(file_url(Path::new("/home/me/ScreenForge Projects/My demo.mp4")), "file:///home/me/ScreenForge%20Projects/My%20demo.mp4");
+        assert_eq!(file_url(Path::new("C:\\Users\\me\\a.mp4")), "file:///C:/Users/me/a.mp4");
     }
 
     #[test]

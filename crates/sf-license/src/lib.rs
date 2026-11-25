@@ -1,4 +1,5 @@
-//! License keys gate video export. Recording and editing are free; a key
+//! License keys gate video export (in the app and from `sf mcp`) and the AI agent panel.
+//! Recording, editing, the ElevenLabs voices and share links are free; a key
 //! (US$49 once, lifetime) is checked offline against the embedded Ed25519 public key.
 //!
 //! Key format: `SF1.<base64url payload>.<base64url signature>`, payload JSON:
@@ -350,7 +351,7 @@ impl Status {
         matches!(self, Status::Valid(_))
     }
 
-    /// A valid Pro key (the monthly plan): export, the agent and cloud share links.
+    /// A valid Pro key (the monthly plan): export and the agent.
     pub fn is_pro(&self) -> bool {
         matches!(self, Status::Valid(p) if p.plan == "monthly")
     }
@@ -484,13 +485,16 @@ pub fn saved_status() -> Status {
     load_saved().map(|k| verify(&k)).unwrap_or_else(|| Status::Invalid("no key".into()))
 }
 
-/// What the backend needs to know a request comes from this computer's license: its device id
-/// and the key signed for it (`share` checks both). `None` when this computer is not signed in.
-/// An expired Pro key still counts, so its owner can list and delete old links.
+/// What `share` needs to know whose links a request is about: this computer's id, and, when it
+/// is signed in, the key signed for it (the links are then the license's; without a key they
+/// are the computer's own, so sharing needs no license). `None` when the computer cannot be
+/// identified. An expired key still counts, so its owner can list and delete old links.
 pub fn owner_auth() -> Option<serde_json::Value> {
-    let key = load_saved()?;
-    (!matches!(verify(&key), Status::Invalid(_))).then_some(())?;
-    Some(serde_json::json!({ "device": device_id()?, "key": key }))
+    let mut auth = serde_json::json!({ "device": device_id()? });
+    if let Some(key) = load_saved().filter(|k| !matches!(verify(k), Status::Invalid(_))) {
+        auth["key"] = key.into();
+    }
+    Some(auth)
 }
 
 /// Sign this computer out of its license: the backend forgets the activation (so the computer

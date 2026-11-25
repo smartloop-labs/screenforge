@@ -51,8 +51,7 @@ older than 0.1.66: point the user to https://screenforge.studio (or
   - Add zooms around clicks if there are none (`add_auto_zooms`).
 - Narration: `add_narration`. Leave `voice` out to read with the narrator chosen in the app;
   when the user names one, pass it: on-device (am_fenrir, am_michael, am_puck, af_heart,
-  af_bella, af_nicole), ElevenLabs by name (Eric, Brian, Sarah …, studio quality, paid in
-  credits) or their own voice (get_options myVoices).
+  af_bella, af_nicole), ElevenLabs by name (Eric, Brian, Sarah …, studio quality, free) or their own voice (get_options myVoices).
 - Music: the user's favourites first (get_options: `music` entries with favorite: true go to
   `set_music`, `favoriteMusic` Jamendo ids to `use_music`); otherwise `search_music`.
 - Backgrounds: a wallpaper or gradient through `patch_project`, or an Unsplash photo with
@@ -64,7 +63,10 @@ older than 0.1.66: point the user to https://screenforge.studio (or
 - Use `render_frame` at the moments you changed to see the finished look before saying it is
   done.
 - Use `export` when the user wants the file. It writes mp4 by default (gif or webm on
-  request), next to the project unless `out` is given, plus a `.details.txt`. Write its
+  request), next to the project unless `out` is given, plus a `.details.txt`, and for mp4
+  uploads it and returns `link`, a page anyone can watch: give the user that link and the
+  file path. Export is the one paid step: a computer without a license has two free exports;
+  when the tool says they are used, pass on how to get Pro or Creator instead of retrying. Write its
   `title`, `description` (a few sentences on what the video shows) and `tags` yourself and pass
   them to `export`: ScreenForge runs no model here, so without them the file is only a template.
 - Report what changed with times as m:ss. `undo_answers` reverts your edits if the user does

@@ -8,7 +8,7 @@ ScreenForge is made for tutorials, product demos, lessons, promos, talking-head 
 
 - [Home](https://screenforge.studio/): what ScreenForge does, with a demo of the AI agent editing a screencast from one prompt
 - [Download](https://screenforge.studio/download): installers for macOS 14 or later, Windows 10 or later, and Linux (.deb and tar.gz)
-- [Pricing](https://screenforge.studio/pricing): free trial; Pro at US$20/month with the AI editing agent, 1,000 credits a month and share links; Creator license at US$49 once. Includes the FAQ
+- [Pricing](https://screenforge.studio/pricing): free trial; ElevenLabs voices and share links are free; Pro at US$20/month with the AI editing agent and 1,000 credits a month; Creator license at US$49 once. Includes the FAQ
 - [Comparison](https://screenforge.studio/comparison): Jam vs Screen Studio vs ScreenForge, a Screen Studio alternative for Windows and Linux
 - [AI agents](https://screenforge.studio/agents): connect Claude Code, Cursor, VS Code or any MCP client to ScreenForge's MCP server to record the screen and edit videos from your own agent; Claude Code plugin at github.com/smartloop-labs/screenforge-plugins
 - [Changelog](https://screenforge.studio/changelog/): every version and what changed, with an Atom feed at /changelog/feed.xml

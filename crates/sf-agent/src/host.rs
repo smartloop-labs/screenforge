@@ -69,7 +69,7 @@ pub struct Spoken {
 }
 
 /// The AI voices `add_narration` offers: (id, description). The first is the default. The
-/// `el_` ones are ElevenLabs' (read online, paid in credits; see sf_tts::cloud).
+/// `el_` ones are ElevenLabs' (read online, free; see sf_tts::cloud).
 pub const VOICES: [(&str, &str); 15] = [
     ("am_fenrir", "male, warm and clear (default)"),
     ("am_michael", "male, calm"),

@@ -1,8 +1,10 @@
-// "My voice": a Pro user's own voice, cloned by ElevenLabs (Instant Voice Clone) from recordings
+// "My voice": a user's own voice, cloned by ElevenLabs (Instant Voice Clone) from recordings
 // they made, so Narration, the agent and Re-voice can speak in it ("my_voice" in `voice` and
-// `voice-enhance`). One clone per license email; the user must say it is their own voice.
+// `voice-enhance`). Free for everyone: one clone per license email, or per computer without a
+// license (`cloneOwners`); the user must say it is their own voice.
 //   { device, action: "status" }                                → { voice: Clone | null, enabled, pro }
-//       enabled: new clones can be made (MY_VOICE_CLOUD=on); pro: this computer may make one
+//       enabled: new clones can be made (MY_VOICE_CLOUD=on); pro: always true now (every
+//       computer may make one; apps up to 0.1.67 offer it only when this says so)
 //   { device, action: "create", consent: true, samples, clean } → { voice: Clone }
 //       samples: base64 WAVs (16-bit PCM mono), 10 s to 3 min in all; clean: take out
 //       background noise first. Making it again replaces the clone.
@@ -14,12 +16,12 @@
 // Cleanup: clones unused for 30 days are put away, and when ElevenLabs has no slot left the
 // least recently used one is, so the account's voice slots hold only voices in use.
 // Making a clone is free at ElevenLabs (it takes one of the account's voice slots), so nothing
-// is charged here; speaking in it is paid like the other ElevenLabs voices.
+// is counted here; speaking in it counts towards the day like the other ElevenLabs voices.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { decode } from "https://deno.land/std@0.190.0/encoding/base64.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { payerFor } from "../_shared/credits.ts";
-import { cors, elevenLabsFailed, fail, gate, isDevice, json, wavSeconds } from "../_shared/elevenlabs.ts";
+import { cloneOf, cloneOwners, cors, elevenLabsFailed, fail, gate, isDevice, json, wavSeconds } from "../_shared/elevenlabs.ts";
 
 /** What the user agrees to, stored with the clone. */
 const CONSENT = "This is my own voice. I agree to ElevenLabs making a clone of it for my ScreenForge narration, and I will not use it to imitate anyone else.";
@@ -81,11 +83,6 @@ async function deleteAtElevenLabs(apiKey: string, voiceId: string) {
   if (r && !r.ok && r.status !== 404) console.error("elevenlabs delete", r.status, (await r.text().catch(() => "")).slice(0, 300));
 }
 
-async function current(db: SupabaseClient, email: string) {
-  const { data } = await db.from("voice_clones").select("*").eq("email", email).maybeSingle();
-  return data;
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   const apiKey = Deno.env.get("ELEVENLABS_API_KEY");
@@ -94,21 +91,21 @@ serve(async (req) => {
   if (!isDevice(device)) return fail("device required", 400);
 
   if (action === "status") {
-    // no gate: a computer without Pro simply has no voice to show
     const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", { auth: { persistSession: false } });
     const payer = await payerFor(db, device);
     // enabled: new clones are made (MY_VOICE_CLOUD), so the app offers to make one
-    return json({ voice: payer.email ? clone(await current(db, payer.email.toLowerCase())) : null, enabled: cloudOn(), pro: payer.allowed && !!payer.email });
+    return json({ voice: clone(await cloneOf(db, cloneOwners(payer, device))), enabled: cloudOn(), pro: true });
   }
 
   const gated = await gate(device);
   if (gated instanceof Response) return gated;
   const { db, payer } = gated;
-  if (!payer.email) return fail("My voice needs ScreenForge Pro activated on this computer.", 402, { code: "pro_required" });
-  const email = payer.email.toLowerCase();
+  // the clone this computer has (its license's, or its own), and where a new one goes
+  const owners = cloneOwners(payer, device);
+  const row = await cloneOf(db, owners);
+  const email: string = row?.email ?? owners[0];
 
   if (action === "delete") {
-    const row = await current(db, email);
     if (row) {
       if (row.voice_id) await deleteAtElevenLabs(apiKey, row.voice_id);
       const { error } = await db.from("voice_clones").delete().eq("email", email);
@@ -118,7 +115,6 @@ serve(async (req) => {
   }
 
   if (action === "rename") {
-    const row = await current(db, email);
     if (!row) return fail("You have not made your voice yet. Create it under Narration → My voice.", 404, { code: "no_clone" });
     const { data, error } = await db.from("voice_clones").update({ name: voiceName(name) }).eq("email", email).select("*").single();
     if (error) return fail(error.message, 500);
@@ -183,13 +179,13 @@ serve(async (req) => {
   }
 
   // the new clone replaces the old one
-  const old = await current(db, email);
-  const row = { email, voice_id, name: voiceName(name), seconds: Math.round(seconds * 10) / 10, consent_text: CONSENT, consent_at: new Date().toISOString(), created_at: new Date().toISOString(), last_used_at: new Date().toISOString() };
-  const { error } = await db.from("voice_clones").upsert(row);
+  const old = row;
+  const made = { email, voice_id, name: voiceName(name), seconds: Math.round(seconds * 10) / 10, consent_text: CONSENT, consent_at: new Date().toISOString(), created_at: new Date().toISOString(), last_used_at: new Date().toISOString() };
+  const { error } = await db.from("voice_clones").upsert(made);
   if (error) {
     await deleteAtElevenLabs(apiKey, voice_id);
     return fail(error.message, 500);
   }
   if (old?.voice_id && old.voice_id !== voice_id) await deleteAtElevenLabs(apiKey, old.voice_id);
-  return json({ voice: clone(row) });
+  return json({ voice: clone(made) });
 });

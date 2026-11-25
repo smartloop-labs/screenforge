@@ -144,7 +144,7 @@ pub fn new_id() -> String {
 //
 // Made from one of their voices on this computer (its recordings are uploaded to the backend's
 // `my-voice`, which makes an Instant Voice Clone), one per license. It reads like the other
-// ElevenLabs voices, paid in credits, as `sf_tts::cloud::STUDIO`. The backend puts away clones
+// ElevenLabs voices, free, as `sf_tts::cloud::STUDIO`. The backend puts away clones
 // unused for a while (to free the account's voice slots); reading with one put away makes it
 // again from the same recordings, here, and reads once more.
 
@@ -155,7 +155,7 @@ pub const STUDIO_MAX_S: f64 = 90.0;
 /// one). Until it answered: neither.
 static STUDIO_OFFER: std::sync::Mutex<(bool, bool)> = std::sync::Mutex::new((false, false));
 
-/// The panel offers to make a studio voice (the backend makes them and the user has Pro).
+/// The panel offers to make a studio voice (the backend makes them, for every computer).
 pub fn studio_offered() -> bool {
     STUDIO_OFFER.lock().map(|o| o.0 && o.1).unwrap_or(false)
 }

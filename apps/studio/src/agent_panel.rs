@@ -340,10 +340,6 @@ impl AgentPanel {
                 Err(e) => self.log.push(Entry::Error(e)),
             }
         }
-        // an ElevenLabs reading (Narration, or the agent's add_narration) spent credits
-        if let Some(c) = crate::narration::take_credits() {
-            self.credits = Some(c);
-        }
         if let Some(rx) = &self.credits_rx {
             match rx.try_recv() {
                 Ok(Ok(v)) => {
@@ -777,13 +773,11 @@ impl AgentPanel {
     /// Apply what the running turn sent since the last frame. Called every frame, whichever
     /// sidebar page is open.
     pub fn poll(&mut self, ed: &mut Editor) {
-        // the plan is checked even while another section is open: the Narration panel offers
-        // the ElevenLabs voices by it
+        // the plan is checked even while another section is open
         self.poll_billing();
         if self.credits.is_none() && self.credits_error.is_none() {
             self.fetch_credits();
         }
-        crate::narration::set_cloud_allowed(self.credits.as_ref().map(|c| c["allowed"].as_bool() == Some(true)));
         let Some(job) = self.job.as_mut() else { return };
         let mut done = None;
         loop {
