@@ -65,9 +65,11 @@ Every editing tool takes `project`, the path of the `.screenforge` package. Tool
 milliseconds on the edited timeline. Each edit is saved straight away, with `project.json.bak`
 as before every save, and `undo_answers` reverts the agent's earlier edits.
 
-Only in the app: Unsplash backgrounds, Jamendo music search, ElevenLabs voices and your own
-cloned voice, which need a ScreenForge account. Narration through MCP uses the six on-device
-Kokoro voices.
+The tools are the ones the app's agent panel uses, so an agent can do the same from either:
+Unsplash backgrounds (`search_photos`, `use_photo`), Jamendo music and your favourite tracks
+(`search_music`, `use_music`, `favorite_music`), and narration with the on-device voices,
+the ElevenLabs voices (studio quality, paid in credits) and the voices you made of your own.
+Unsplash, Jamendo and ElevenLabs go through your ScreenForge account, as in the app.
 
 ## Working alongside the app
 

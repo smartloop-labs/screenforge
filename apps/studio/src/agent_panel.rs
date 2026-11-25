@@ -7,13 +7,12 @@
 //!
 //! Requests go through ScreenForge's backend, which holds the Claude key.
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 
 use egui::{vec2, CornerRadius, RichText, Stroke};
 use serde_json::{json, Value};
-use sf_agent::{Action, Conversation, Event, Host, Route, Settings, Usage, Workspace, MODELS};
+use sf_agent::{Action, Conversation, Event, Route, Settings, Usage, Workspace, MODELS};
 use sf_project::Project;
 
 use crate::editor::{fmt_ms, Editor};
@@ -39,238 +38,11 @@ pub fn details_route() -> Option<(Route, &'static str)> {
     route().ok().map(|r| (r, model))
 }
 
-/// The editor's side of the agent: catalogs gathered on the UI thread when a turn starts, and
-/// what needs files or the network (presets, Unsplash, imports), run on the agent's thread.
-struct StudioHost {
-    options: Value,
-    presets: Vec<(String, PathBuf)>,
-    project_dir: PathBuf,
-    /// The screen video (source time = its time) and its size.
-    media: PathBuf,
-    media_size: (u32, u32),
-    /// Results of the last Unsplash search, for `download_photo`.
-    photos: Mutex<Vec<crate::unsplash::Photo>>,
-    /// The user's favourite tracks, then the results of each Jamendo search, for `download_music`.
-    tracks: Mutex<Vec<crate::music::Track>>,
-    ctx: egui::Context,
-}
-
-impl StudioHost {
-    fn new(ed: &Editor, ctx: &egui::Context) -> Self {
-        let assets = &ed.session.assets;
-        let presets: Vec<(String, PathBuf)> = sf_project::Preset::default_folder().map(|f| sf_project::Preset::list(&f)).unwrap_or_default().into_iter().map(|p| (p.name(), p.path.clone())).collect();
-        let mut looks = assets.list_luts();
-        if let Ok(files) = std::fs::read_dir(ed.session.pkg.path.join("assets")) {
-            looks.extend(files.flatten().map(|f| f.file_name().to_string_lossy().into_owned()).filter(|n| n.to_ascii_lowercase().ends_with(".cube")));
-        }
-        // the Jamendo tracks the user hearted, CC BY only: the agent cannot know whether the video
-        // earns money, so a non-commercial favourite is left out
-        let library = crate::music::Library::load();
-        let favorites: Vec<crate::music::Track> = library.favorites.iter().filter(|t| t.kind == crate::music::TrackKind::Jamendo && crate::music::usable(t.license_url.as_deref(), false)).cloned().collect();
-        let options = json!({
-            "wallpapers": assets.list_backgrounds(),
-            // bundled tracks the user hearted are marked, so the agent can prefer them
-            "music": assets.list_background_audio().iter().map(|n| json!({ "track": n, "label": sf_session::assets::background_audio_label(n), "favorite": library.is_favorite(&crate::music::library_id(n)) })).collect::<Vec<_>>(),
-            "favoriteMusic": favorites.iter().map(track_value).collect::<Vec<_>>(),
-            // the user's own voices, made on this computer, by the names they gave them
-            "myVoices": crate::my_voice::list().iter().map(|v| json!({ "voice": v.id, "name": v.name })).collect::<Vec<_>>(),
-            // ElevenLabs voices beyond the built-in eight (native speakers of other languages),
-            // and the language narration is in (absent: English)
-            "cloudVoices": sf_tts::cloud::cloud_voices().iter().filter(|v| sf_agent::host::VOICES.iter().all(|(id, _)| *id != v.id)).map(|v| json!({ "voice": v.id, "name": v.name, "female": v.female, "style": v.style, "language": v.language }))
-                // the user's own voice cloned by ElevenLabs
-                .chain(sf_tts::cloud::studio().map(|v| json!({ "voice": v.id, "name": format!("{} (studio quality)", v.name), "style": v.style, "studio": true })))
-                .collect::<Vec<_>>(),
-            "narrationLanguage": ed.session.pkg.project.config.audio.narration_language(),
-            // the narrator the user selected in the Narration panel: add_narration reads with it
-            // when no voice is given
-            "narrationVoice": ed.session.pkg.project.config.audio.narration_voice.as_deref().map(|v| json!({ "voice": v, "name": if sf_tts::clone::is_my_voice(v) { crate::my_voice::name(v) } else { sf_tts::voice_name(v).unwrap_or(v).to_string() } })),
-            "cursorSets": sf_session::cursor_sets::SETS.iter().map(|(id, label)| json!({ "id": id, "label": label })).collect::<Vec<_>>(),
-            "cameraLooks": looks,
-            "presets": presets.iter().map(|(n, _)| n).collect::<Vec<_>>(),
-            "recordedAudio": crate::audio::AudioPlayer::available_tracks(&ed.session),
-            "hasCamera": !ed.session.source.camera.is_empty(),
-            "hasTranscript": !ed.session.captions.is_empty(),
-        });
-        let media_size = (ed.session.source.native_width.max(1), ed.session.source.native_height.max(1));
-        StudioHost { options, presets, project_dir: ed.session.pkg.path.clone(), media: ed.session.source.media_path.clone(), media_size, photos: Mutex::new(vec![]), tracks: Mutex::new(favorites), ctx: ctx.clone() }
-    }
-}
-
-/// A Jamendo track as the agent sees it (a favourite or a search result).
-fn track_value(t: &crate::music::Track) -> Value {
-    let credit = crate::music::Credit { title: t.name.clone(), artist: t.artist.clone(), url: None, license_url: t.license_url.clone() };
-    json!({ "id": t.id, "name": t.name, "artist": t.artist, "seconds": t.duration, "license": credit.license() })
-}
-
-/// Motion sections per screen video, measured once (decoding is the slow part).
-static MOTION: Mutex<Vec<(PathBuf, Vec<(f64, f64, sf_agent::motion::Motion)>)>> = Mutex::new(Vec::new());
-
-/// Frames the motion scan reads per second, and their width (wide enough that a typed
-/// character changes a few pixels).
-const MOTION_FPS: f64 = 2.0;
-const MOTION_W: u32 = 640;
-
-fn ffmpeg() -> Result<std::process::Command, String> {
-    let path = sf_recording::ffmpeg::ffmpeg_path().map_err(|e| e.to_string())?;
-    let mut cmd = std::process::Command::new(path);
-    sf_recording::ffmpeg::hide_console(&mut cmd);
-    Ok(cmd)
-}
-
-impl Host for StudioHost {
-    fn screen_motion(&self) -> Result<Vec<(f64, f64, sf_agent::motion::Motion)>, String> {
-        if let Some((_, s)) = MOTION.lock().map_err(|_| "busy")?.iter().find(|(p, _)| *p == self.media) {
-            return Ok(s.clone());
-        }
-        let h = ((MOTION_W as f64 * self.media_size.1 as f64 / self.media_size.0 as f64 / 2.0).round() as u32 * 2).max(2);
-        let mut child = ffmpeg()?
-            .args(["-v", "error", "-nostdin", "-i"])
-            .arg(&self.media)
-            .args(["-vf", &format!("fps={MOTION_FPS},scale={MOTION_W}:{h},format=gray"), "-f", "rawvideo", "-"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| format!("could not read the video: {e}"))?;
-        // one frame at a time: a long video never sits in memory
-        let mut stdout = child.stdout.take().ok_or("could not read the video")?;
-        let size = (MOTION_W * h) as usize;
-        let frames = std::iter::from_fn(|| {
-            use std::io::Read;
-            let mut f = vec![0u8; size];
-            stdout.read_exact(&mut f).ok().map(|_| f)
-        });
-        let sections = sf_agent::motion::sections(frames, MOTION_W as usize, MOTION_FPS);
-        let _ = child.wait();
-        if sections.is_empty() {
-            return Err("could not read the video".into());
-        }
-        MOTION.lock().map_err(|_| "busy")?.push((self.media.clone(), sections.clone()));
-        Ok(sections)
-    }
-
-    fn screen_frames(&self, source_ms: &[f64]) -> Result<Vec<Vec<u8>>, String> {
-        source_ms
-            .iter()
-            .map(|t| {
-                let out = ffmpeg()?
-                    .args(["-v", "error", "-nostdin", "-ss", &format!("{:.3}", t / 1000.0), "-i"])
-                    .arg(&self.media)
-                    .args(["-frames:v", "1", "-vf", "scale=768:-2", "-q:v", "5", "-f", "image2", "-c:v", "mjpeg", "pipe:1"])
-                    .output()
-                    .map_err(|e| format!("could not read the video: {e}"))?;
-                if out.stdout.is_empty() {
-                    return Err(format!("no frame at {:.1} s", t / 1000.0));
-                }
-                Ok(out.stdout)
-            })
-            .collect()
-    }
-
-    fn options(&self) -> Value {
-        self.options.clone()
-    }
-
-    fn apply_preset(&self, name: &str, project: &mut Project) -> Result<(), String> {
-        let (_, path) = self.presets.iter().find(|(n, _)| n.eq_ignore_ascii_case(name.trim())).ok_or_else(|| format!("no preset named {name}"))?;
-        let preset = sf_project::Preset::open(path).map_err(|e| e.to_string())?;
-        preset.apply(project, &self.project_dir).map_err(|e| e.to_string())
-    }
-
-    fn search_photos(&self, query: &str) -> Result<Value, String> {
-        let photos = crate::unsplash::search_blocking(query)?;
-        let list = photos.iter().map(|p| json!({ "id": p.id, "description": p.description, "author": p.author, "color": p.color })).collect();
-        *self.photos.lock().map_err(|_| "busy")? = photos;
-        Ok(Value::Array(list))
-    }
-
-    fn download_photo(&self, id: &str) -> Result<Value, String> {
-        let photo = self.photos.lock().map_err(|_| "busy")?.iter().find(|p| p.id == id).cloned().ok_or("search_photos first: that id is not in the last results")?;
-        let applied = crate::unsplash::download_photo(photo, &self.project_dir.join("assets"), &AtomicU32::new(0), &self.ctx)?;
-        let mut value = crate::unsplash::background_value(&applied);
-        value["credit"] = json!(crate::unsplash::credit(&value));
-        Ok(value)
-    }
-
-    fn search_music(&self, query: &str, instrumental: bool) -> Result<Value, String> {
-        let tracks = crate::music::search_blocking(query, instrumental)?;
-        let list = tracks.iter().map(track_value).collect();
-        // keep the favourites (and earlier results): any id the agent was shown stays usable
-        let mut known = self.tracks.lock().map_err(|_| "busy")?;
-        for t in tracks {
-            if !known.iter().any(|k| k.id == t.id) {
-                known.push(t);
-            }
-        }
-        Ok(Value::Array(list))
-    }
-
-    fn download_music(&self, id: &str) -> Result<Value, String> {
-        let track = self.tracks.lock().map_err(|_| "busy")?.iter().find(|t| t.id == id).cloned().ok_or("that id is not in get_options favoriteMusic or a search_music result")?;
-        let assets = self.project_dir.join("assets");
-        let applied = crate::music::download_track(&track, &assets, &AtomicU32::new(0), &self.ctx)?;
-        let credit = crate::music::credit(&assets, &applied.file_name).map(|c| c.text());
-        Ok(json!({ "fileName": applied.file_name, "name": track.name, "artist": track.artist, "credit": credit }))
-    }
-
-    fn favorite_music(&self, track: &str, favorite: bool) -> Result<Value, String> {
-        use crate::music::{Library, Track};
-        // the file on disk, not a copy loaded earlier: the panel may have changed it since
-        let mut library = Library::load();
-        let name = track.trim();
-        let bundled: Vec<String> = self.options["music"].as_array().into_iter().flatten().filter_map(|m| m["track"].as_str().map(str::to_string)).collect();
-        let assets = self.project_dir.join("assets");
-        let base = name.rsplit('/').next().unwrap_or(name);
-        let known: Vec<Track> = self.tracks.lock().map_err(|_| "busy")?.iter().chain(&library.recent).cloned().collect();
-        let title = if let Some(n) = bundled.iter().find(|n| n.as_str() == name || sf_session::assets::background_audio_key(n) == sf_session::assets::background_audio_key(name)) {
-            let t = Track::library(n);
-            library.set_favorite(&t, favorite);
-            t.name
-        } else if let Some(t) = known.iter().find(|t| t.id == name) {
-            library.set_favorite(t, favorite);
-            t.name.clone()
-        } else if !base.is_empty() && assets.join(base).is_file() {
-            library.set_file(&assets, base, &known, favorite)?
-        } else {
-            return Err(format!("no track \"{name}\": use a name from get_options music, a Jamendo id from favoriteMusic or search_music, or a music file in the project"));
-        };
-        Ok(json!({ "name": title, "favorite": favorite }))
-    }
-
-    fn import_url(&self, url: &str) -> Result<String, String> {
-        crate::music::download_link(url, &self.project_dir.join("assets"), &AtomicU32::new(0), &self.ctx).map(|a| a.file_name)
-    }
-
-    fn import_file(&self, path: &str) -> Result<String, String> {
-        let src = PathBuf::from(path.trim());
-        let src = match src.strip_prefix("~") {
-            Ok(rest) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)).unwrap_or(src.clone()),
-            Err(_) => src,
-        };
-        if !src.is_file() {
-            return Err(format!("no file at {}", src.display()));
-        }
-        let name = src.file_name().ok_or("not a file")?.to_string_lossy().into_owned();
-        let dest = self.project_dir.join("assets").join(&name);
-        std::fs::create_dir_all(dest.parent().expect("assets dir")).map_err(|e| e.to_string())?;
-        std::fs::copy(&src, &dest).map_err(|e| format!("could not copy it into the project: {e}"))?;
-        Ok(name)
-    }
-
-    fn speak(&self, text: &str, voice: &str, speed: f64, language: Option<&str>) -> Result<sf_agent::host::Spoken, String> {
-        crate::narration::speak_into(&self.project_dir, text, voice, speed, language)
-    }
-
-    fn import_media(&self, path: &str) -> Result<sf_project::tracks::MediaItem, String> {
-        let src = PathBuf::from(path.trim());
-        let src = match src.strip_prefix("~") {
-            Ok(rest) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)).unwrap_or(src.clone()),
-            Err(_) => src,
-        };
-        if !src.is_file() {
-            return Err(format!("no file at {}", src.display()));
-        }
-        crate::layers::import(&self.project_dir, &src)
-    }
+/// The editor's side of the agent (shared with `sf mcp`): catalogs read when a turn starts, and
+/// what needs files or the network, run on the agent's thread; downloads repaint the window.
+fn new_host(ed: &Editor, ctx: &egui::Context) -> sf_services::host::LocalHost {
+    let ctx = ctx.clone();
+    sf_services::host::LocalHost::new(&ed.session, Arc::new(move || ctx.request_repaint()))
 }
 
 /// Signing in (or switching account) with the emailed code, as Export → Activate does.
@@ -980,7 +752,7 @@ impl AgentPanel {
             seek_to: None,
             content_px: crate::masks::content_px(ed),
             audio_tracks: crate::audio::AudioPlayer::available_tracks(&ed.session),
-            host: Some(Arc::new(StudioHost::new(ed, ctx))),
+            host: Some(Arc::new(new_host(ed, ctx))),
             actions: vec![],
             earlier: self.earlier.clone(),
             user_text: String::new(),

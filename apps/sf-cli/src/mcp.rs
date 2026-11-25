@@ -25,19 +25,20 @@ use sf_project::Project;
 use sf_render::{Compositor, Gpu};
 use sf_session::Session;
 
-use crate::host::{self, CliHost};
+use sf_services::host::LocalHost;
+
+use crate::host;
 use crate::record;
 
 /// Protocol versions this server speaks, newest first.
 const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-/// App tools that make no sense outside the editor (the playhead, its export dialog) or need
-/// the app's accounts.
-const APP_ONLY: [&str; 7] = ["seek", "open_export", "search_photos", "use_photo", "search_music", "use_music", "favorite_music"];
+/// App tools that make no sense outside the editor (the playhead, its export dialog).
+const APP_ONLY: [&str; 2] = ["seek", "open_export"];
 
 /// Tools that write files into the package besides project.json: the session is opened again
 /// after them so it sees the new files.
-const FILE_TOOLS: [&str; 7] = ["add_narration", "update_narration", "add_overlay", "import_file", "apply_preset", "add_music", "set_music"];
+const FILE_TOOLS: [&str; 9] = ["add_narration", "update_narration", "add_overlay", "import_file", "apply_preset", "add_music", "set_music", "use_photo", "use_music"];
 
 const INSTRUCTIONS: &str = "ScreenForge records the screen and edits screen recordings into polished videos (backgrounds, zooms, cuts, speed, captions, camera, titles, narration). \
 A project is a .screenforge package (a folder); pass its path as `project` to every editing tool. Edits are saved immediately and show up live in the ScreenForge app if the project is open there.
@@ -57,7 +58,7 @@ How to edit:
 /// A project the server has open.
 struct Open {
     session: Session,
-    host: Arc<CliHost>,
+    host: Arc<LocalHost>,
     /// project.json's modification time when it was last read or written here.
     stamp: Option<SystemTime>,
     /// The project before each edit made through this server, for `undo_answers`.
@@ -93,6 +94,9 @@ fn image(bytes: &[u8], mime: &str) -> Value {
 
 /// Run the server until stdin closes.
 pub fn serve() -> Result<()> {
+    // the ElevenLabs voices on offer (and the user's studio voice), as the app loads them
+    sf_services::narration::load_cloud_voices();
+    sf_services::my_voice::load_studio();
     let mut server = Server { gpu: None, open: HashMap::new(), recording: None };
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
@@ -188,9 +192,14 @@ impl Server {
         if !fresh {
             let gpu = self.gpu()?;
             let session = Session::open(path, gpu).with_context(|| format!("opening {}", path.display()))?;
-            let host = Arc::new(CliHost::new(&session));
-            // keep the undo history across a reload: the edits are still ours
-            let earlier = self.open.remove(path).map(|o| o.earlier).unwrap_or_default();
+            let host = Arc::new(host::new_host(&session));
+            // keep the undo history across a reload (the edits are still ours), and what the
+            // last searches found
+            let before = self.open.remove(path);
+            if let Some(o) = &before {
+                host.keep_results(&o.host);
+            }
+            let earlier = before.map(|o| o.earlier).unwrap_or_default();
             self.open.insert(path.to_path_buf(), Open { session, host, stamp: now, earlier });
         }
         Ok(self.open.get_mut(path).expect("open"))

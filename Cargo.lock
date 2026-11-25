@@ -4704,6 +4704,7 @@ dependencies = [
  "sf-project",
  "sf-recording",
  "sf-render",
+ "sf-services",
  "sf-session",
  "sf-transcribe",
  "sf-tts",
@@ -4832,6 +4833,27 @@ dependencies = [
  "sf-project",
  "tracing",
  "wgpu",
+]
+
+[[package]]
+name = "sf-services"
+version = "0.1.66"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "directories",
+ "serde",
+ "serde_json",
+ "sf-agent",
+ "sf-license",
+ "sf-media",
+ "sf-project",
+ "sf-recording",
+ "sf-session",
+ "sf-tts",
+ "tempfile",
+ "tracing",
+ "ureq 2.12.1",
 ]
 
 [[package]]
@@ -5146,6 +5168,7 @@ dependencies = [
  "sf-project",
  "sf-recording",
  "sf-render",
+ "sf-services",
  "sf-session",
  "sf-transcribe",
  "sf-tts",
