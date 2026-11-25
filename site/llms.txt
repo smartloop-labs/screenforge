@@ -10,6 +10,7 @@ ScreenForge is made for tutorials, product demos, lessons, promos, talking-head 
 - [Download](https://screenforge.studio/download): installers for macOS 14 or later, Windows 10 or later, and Linux (.deb and tar.gz)
 - [Pricing](https://screenforge.studio/pricing): free trial; Pro at US$20/month with the AI editing agent, 1,000 credits a month and share links; Creator license at US$49 once. Includes the FAQ
 - [Comparison](https://screenforge.studio/comparison): Jam vs Screen Studio vs ScreenForge, a Screen Studio alternative for Windows and Linux
+- [AI agents](https://screenforge.studio/agents): connect Claude Code, Cursor, VS Code or any MCP client to ScreenForge's MCP server to record the screen and edit videos from your own agent; Claude Code plugin at github.com/smartloop-labs/screenforge-plugins
 - [Changelog](https://screenforge.studio/changelog/): every version and what changed, with an Atom feed at /changelog/feed.xml
 - [Privacy policy](https://screenforge.studio/privacy): what stays on your computer and when the app goes online
 - [Spanish site](https://screenforge.studio/es/)
@@ -29,6 +30,7 @@ ScreenForge is made for tutorials, product demos, lessons, promos, talking-head 
 - Edit any MP4, MOV or M4V; import Loom videos from a share link
 - Share links that play in any browser; AI-written titles, descriptions and tags for YouTube
 - Export to MP4 (H.264 or HEVC), ProRes, WebM or GIF, up to 4K
+- MCP server for your own AI agent (Claude Code, Cursor, VS Code, Codex): record, edit and export from the agent
 
 ## Links
 
