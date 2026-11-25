@@ -15,7 +15,7 @@ import site_partials  # the shared footer
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'site'
 PAGES = ['index.html', 'pricing.html', 'download.html', 'comparison.html']
 ENGLISH_ONLY = ['privacy.html', 'terms.html', 'contact.html', 'success.html', '404.html']
-ASSETS = ['favicon.ico', 'favicon.svg', 'icon.png', 'apple-touch-icon.png', 'demo-v7.mp4', 'demo-poster-v7.jpg']
+ASSETS = ['favicon.ico', 'favicon.svg', 'favicon-512.png', 'icon.png', 'apple-touch-icon.png', 'demo-v7.mp4', 'demo-poster-v7.jpg']
 
 
 def must(s, old, new, count=1):
@@ -114,7 +114,7 @@ INDEX_JSONLD = '''<script type="application/ld+json">
       "name": "ScreenForge",
       "url": "https://screenforge.studio/es/",
       "inLanguage": "es",
-      "image": "https://screenforge.studio/og.png?v=6",
+      "image": "https://screenforge.studio/og.png?v=7",
       "alternateName": "ScreenForge editor de pantalla con IA",
       "applicationSubCategory": "Grabador de pantalla y editor de vídeo",
       "description": "Grabador de pantalla y editor de vídeo con IA para tutoriales, demos de producto, vídeos a cámara y screencasts. Graba tu pantalla, tu webcam y, en Mac, un iPhone o iPad. Un agente de IA edita a partir de peticiones en lenguaje natural: cortes, zooms, velocidad, música y fondos. La narración con voz de IA y los subtítulos se generan en tu ordenador. Edita también tus propios vídeos MP4 y MOV. Una alternativa de código abierto a Screen Studio y CapCut.",
