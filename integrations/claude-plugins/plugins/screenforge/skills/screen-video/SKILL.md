@@ -49,8 +49,14 @@ older than 0.1.66: point the user to https://screenforge.studio (or
   - With a transcript: cut long pauses and filler words.
   - Speed up stretches where nothing is said or clicked, 2–4×.
   - Add zooms around clicks if there are none (`add_auto_zooms`).
-- Narration: `add_narration` with an on-device voice (am_fenrir, am_michael, am_puck,
-  af_heart, af_bella, af_nicole).
+- Narration: `add_narration`. Leave `voice` out to read with the narrator chosen in the app;
+  when the user names one, pass it: on-device (am_fenrir, am_michael, am_puck, af_heart,
+  af_bella, af_nicole), ElevenLabs by name (Eric, Brian, Sarah …, studio quality, paid in
+  credits) or their own voice (get_options myVoices).
+- Music: the user's favourites first (get_options: `music` entries with favorite: true go to
+  `set_music`, `favoriteMusic` Jamendo ids to `use_music`); otherwise `search_music`.
+- Backgrounds: a wallpaper or gradient through `patch_project`, or an Unsplash photo with
+  `search_photos` then `use_photo`.
 - Titles and transitions: `add_title`, `set_transition`.
 
 ## 3. Check, then deliver

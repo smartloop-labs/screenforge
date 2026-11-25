@@ -24,6 +24,7 @@ sf-agent.workspace = true
 sf-recording.workspace = true
 sf-transcribe.workspace = true
 sf-tts.workspace = true
+sf-services.workspace = true
 eframe.workspace = true
 egui.workspace = true
 egui-wgpu.workspace = true
