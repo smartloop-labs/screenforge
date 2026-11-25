@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The site's shared footer: one source, filled into every page.
+"""The site's shared footer and promo banner: one source each, filled into every page.
 Also the FAQPage structured data of any page with a <div class="faq">, built from its questions.
 
 scripts/site/footer.en.html and footer.es.html hold the footer with links relative to the
@@ -7,14 +7,18 @@ site root. Every page under site/ gets the footer of its language (pages under s
 Spanish one), with those links rewritten relative to the page, between its <footer> tags.
 scripts/gen-releases.py uses the same footer for the release notes pages.
 
+scripts/site/banner.en.html and banner.es.html hold the promo banner (a sale, an announcement),
+placed at the top of every page between <!-- banner --> and <!-- /banner -->, links rewritten
+the same way. Empty or delete both files to take the banner down.
+
   python3 scripts/site_partials.py           # update the pages in place
-  python3 scripts/site_partials.py --check   # list pages whose footer differs; exit 1 if any
+  python3 scripts/site_partials.py --check   # list pages that would change; exit 1 if any
 
 A page's FAQ structured data is the <script type="application/ld+json" data-faq> before </head>,
 rebuilt from the page's <div class="faq"> (each <h3> with the text after it), so edit the questions
 in the page, never the script block.
 
-Edit the footer in scripts/site/, never in a page: the site workflow runs this before every
+Edit the footer and the banner in scripts/site/, never in a page: the site workflow runs this before every
 deploy, so a page's own copy is replaced.
 """
 import html as htmllib
@@ -35,9 +39,11 @@ def lang(page: Path) -> str:
     return "es" if page.relative_to(SITE).parts[0] == "es" else "en"
 
 
-def footer(page: Path) -> str:
-    """The footer for `page`, its links relative to the page's folder."""
-    text = (PARTIALS / f"footer.{lang(page)}.html").read_text(encoding="utf-8").strip()
+def partial(name: str, page: Path) -> str:
+    """The partial `name` in the language of `page`, its links relative to the page's folder
+    ("" when there is no such file)."""
+    source = PARTIALS / f"{name}.{lang(page)}.html"
+    text = source.read_text(encoding="utf-8").strip() if source.exists() else ""
     here = page.parent.relative_to(SITE)
 
     def rel(m):
@@ -47,6 +53,22 @@ def footer(page: Path) -> str:
         return f'{m.group(1)}{out}{"/" if slash else ""}"'
 
     return RELATIVE.sub(rel, text)
+
+
+def footer(page: Path) -> str:
+    return partial("footer", page)
+
+
+BANNER = re.compile(r"<!-- banner -->.*?<!-- /banner -->\n", re.S)
+
+
+def with_banner(page: Path, html: str) -> str:
+    """`html` with the banner of its language as the first thing in <body>, or with none."""
+    html = BANNER.sub("", html, count=1)
+    b = partial("banner", page)
+    if not b:
+        return html
+    return html.replace("<body>\n", f"<body>\n<!-- banner -->\n{b}\n<!-- /banner -->\n", 1)
 
 
 FAQ = re.compile(r'<div class="faq">(.*?)\n  </div>', re.S)
@@ -73,6 +95,7 @@ def faq_ld(html: str) -> str:
 
 
 def apply(page: Path, html: str) -> str:
+    html = with_banner(page, html)
     if FOOTER.search(html):
         f = footer(page)
         html = FOOTER.sub(lambda _: f, html, count=1)
@@ -95,9 +118,9 @@ def main():
                 page.write_text(new, encoding="utf-8")
     if check:
         for p in changed:
-            print(f"footer or FAQ data differs: {p}")
+            print(f"footer, banner or FAQ data differs: {p}")
         sys.exit(1 if changed else 0)
-    print(f"footer and FAQ data updated on {len(changed)} page(s)")
+    print(f"footer, banner and FAQ data updated on {len(changed)} page(s)")
 
 
 if __name__ == "__main__":
