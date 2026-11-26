@@ -517,18 +517,25 @@ impl Server {
             if line(&args["end"], "title").is_some() {
                 let end = &args["end"];
                 let len = speak(&mut run, line(end, "narration"), at, 3200.0)?;
-                let mut title = json!({ "content": line(end, "title"), "start_ms": at, "duration_ms": len - 40.0, "font": "heavy", "size_ratio": 0.062, "align": "center", "position": { "x": centre, "y": 0.36 }, "accent_color": t.accent, "anim_in": "rise", "anim_out": "none" });
+                // a logo goes over the name, and the rest sits a little lower for it
+                let logo = line(end, "logo");
+                let down = if logo.is_some() { 0.035 } else { 0.0 };
+                if let Some(file) = &logo {
+                    let side = 0.2;
+                    run("add_overlay", json!({ "path": file, "start_ms": at + 100.0, "duration_ms": len - 140.0, "rect": { "x": centre - side / 2.0, "y": 0.19, "width": side, "height": side * WIDTH / HEIGHT }, "shadow": 0, "corner_ratio": 0, "anim_in": "zoom", "anim_out": "none" })).context("the end card's logo")?;
+                }
+                let mut title = json!({ "content": line(end, "title"), "start_ms": at, "duration_ms": len - 40.0, "font": "heavy", "size_ratio": 0.062, "align": "center", "position": { "x": centre, "y": 0.36 + down }, "accent_color": t.accent, "anim_in": "rise", "anim_out": "none" });
                 if let Some(tagline) = line(end, "tagline") {
                     title["subtitle"] = json!(tagline);
                 }
                 run("add_title", title)?;
                 if let Some(cta) = line(end, "cta") {
                     // the button: a pill and its words, each on its own
-                    let strip = [CARD[0], 0.47, CARD[2], CARD[2] * WIDTH * 130.0 / CARD_W / HEIGHT];
+                    let strip = [CARD[0], 0.47 + down, CARD[2], CARD[2] * WIDTH * 130.0 / CARD_W / HEIGHT];
                     place(&mut run, &t.button_elements(&cta), strip, 130.0, at + 500.0, len - 540.0, "zoom", "button")?;
                 }
                 if let Some(url) = line(end, "url") {
-                    run("add_title", json!({ "content": url, "start_ms": at + 700.0, "duration_ms": len - 740.0, "font": "sans-serif", "size_ratio": 0.024, "align": "center", "position": { "x": centre, "y": 0.58 }, "color": "#c9c6d6", "anim_in": "fade", "anim_out": "none" }))?;
+                    run("add_title", json!({ "content": url, "start_ms": at + 700.0, "duration_ms": len - 740.0, "font": "sans-serif", "size_ratio": 0.024, "align": "center", "position": { "x": centre, "y": 0.58 + down }, "color": "#c9c6d6", "anim_in": "fade", "anim_out": "none" }))?;
                 }
                 segments.push(json!({ "part": "end card", "startMs": at.round(), "endMs": (at + len).round() }));
                 at += len;
@@ -1033,7 +1040,7 @@ pub fn tool_list() -> Vec<Value> {
                             "card": { "description": "The beat's card: an object such as { type: \"checklist\", label, rows } (its elements stay editable one by one), or SVG markup for an illustration (one image)" }
                         }, "required": ["line1"] }
                     },
-                    "end": { "type": "object", "description": "The closing card", "properties": { "title": { "type": "string", "description": "The product or brand name" }, "tagline": { "type": "string" }, "cta": { "type": "string", "description": "The button's words, e.g. Download free today" }, "url": { "type": "string" }, "narration": { "type": "string" } } },
+                    "end": { "type": "object", "description": "The closing card", "properties": { "logo": { "type": "string", "description": "The product's logo, an image file on this computer (a square PNG is best): shown over the name. Use it whenever the user has one" }, "title": { "type": "string", "description": "The product or brand name" }, "tagline": { "type": "string" }, "cta": { "type": "string", "description": "The button's words, e.g. Download free today" }, "url": { "type": "string" }, "narration": { "type": "string" } } },
                     "folder": folder
                 },
                 "required": ["template"]
