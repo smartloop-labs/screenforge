@@ -80,6 +80,9 @@ impl RailTool {
 pub struct Editor {
     /// Opened straight after recording: closing asks whether to keep it.
     pub fresh_recording: bool,
+    /// The fresh project was started from a template, not recorded (the words of the
+    /// keep-or-trash question).
+    pub fresh_template: bool,
     pub path: PathBuf,
     pub session: Session,
     pub compositor: Compositor,
@@ -202,6 +205,7 @@ impl Editor {
         let start_ms = session.pkg.project.data.get("last-playback-position-source-time-ms").and_then(|v| v.as_f64()).and_then(|src| session.timeline.source_to_output(src)).unwrap_or(0.0);
         Editor {
             fresh_recording: false,
+            fresh_template: false,
             path: path.to_path_buf(),
             session,
             compositor,

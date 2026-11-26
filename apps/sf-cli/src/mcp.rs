@@ -112,7 +112,7 @@ fn image(bytes: &[u8], mime: &str) -> Value {
 /// `sf template`: a project from template `key`, with what `spec` says (the arguments of
 /// `new_from_template`) or, without one, the template's stand-in words and cards. Returns the
 /// project's path.
-pub fn from_template(key: &str, name: Option<&str>, folder: Option<&Path>, spec: Option<Value>) -> Result<PathBuf> {
+pub fn from_template(key: &str, name: Option<&str>, folder: Option<&Path>, spec: Option<Value>, progress: &dyn Fn(u64, u64)) -> Result<PathBuf> {
     let t = templates::find(key).ok_or_else(|| anyhow!("unknown template {key}: {}", templates::TEMPLATES.iter().map(|t| t.key).collect::<Vec<_>>().join(", ")))?;
     let mut args = spec.unwrap_or_else(|| t.sample());
     args["template"] = json!(t.key);
@@ -123,7 +123,7 @@ pub fn from_template(key: &str, name: Option<&str>, folder: Option<&Path>, spec:
         args["folder"] = json!(f);
     }
     let mut server = Server { gpu: None, open: HashMap::new(), recording: None };
-    let content = server.new_from_template(&args)?;
+    let content = server.new_from_template(&args, progress)?;
     let out: Value = content.first().and_then(|c| c["text"].as_str()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
     out["project"].as_str().map(PathBuf::from).ok_or_else(|| anyhow!("the template did not make a project"))
 }
@@ -284,7 +284,7 @@ impl Server {
                 Ok(vec![text("Recording deleted.")])
             }
             "list_templates" => Ok(vec![text(json!({ "templates": templates::TEMPLATES.iter().map(templates::Template::json).collect::<Vec<_>>(), "cardCanvas": { "width": templates::CARD_W, "height": templates::CARD_H }, "cards": templates::card_guide() }).to_string())]),
-            "new_from_template" => self.new_from_template(&args),
+            "new_from_template" => self.new_from_template(&args, &|_, _| {}),
             "import_video" => {
                 let src = args["source"].as_str().ok_or_else(|| anyhow!("`source` is required"))?;
                 let src = if sf_recording::loom::is_link(src) { src.to_string() } else { expand(src).to_string_lossy().into_owned() };
@@ -348,7 +348,8 @@ impl Server {
     /// project's "recording" (a still video), and the hook, the beats and the end card are laid
     /// over it with the ordinary tools, each as long as its narration. Everything is done on
     /// one copy of the project and saved once.
-    fn new_from_template(&mut self, args: &Value) -> Result<Vec<Value>> {
+    /// `progress(done, total)` is called as the background and then each part is finished.
+    fn new_from_template(&mut self, args: &Value, progress: &dyn Fn(u64, u64)) -> Result<Vec<Value>> {
         use templates::{Element, CARD, CARD_H, CARD_W, HEIGHT, WIDTH};
         let t = templates::find(args["template"].as_str().unwrap_or_default()).ok_or_else(|| anyhow!("unknown template: list_templates shows the ones there are"))?;
         let beats = args["beats"].as_array().cloned().unwrap_or_default();
@@ -370,6 +371,9 @@ impl Server {
             });
         }
         let name = templates::file_stem(args["name"].as_str().unwrap_or(t.label));
+        // steps: the background, the look, the hook, each beat, the end card, saving
+        let total = beats.len() as u64 + 5;
+        progress(0, total);
         // the background as a still video (a few frames a second are plenty for a still), as
         // long as the piece can get: about twelve seconds a part. The rest is cut at the end.
         let seconds: f64 = ((beats.len() + 2) as f64 * 12.0 + 12.0).min(180.0);
@@ -388,6 +392,7 @@ impl Server {
         })();
         let _ = std::fs::remove_dir_all(&tmp);
         let path = made?;
+        progress(1, total);
         let platform = args["platform"].as_str().unwrap_or("tiktok").to_string();
         let voice = line(args, "voice");
         let open = self.project(&path)?;
@@ -414,6 +419,7 @@ impl Server {
                 { "op": "add", "path": "/config/captions/enableTranscript", "value": true },
             ] }))?;
             run("set_format", json!({ "platform": platform }))?;
+            progress(2, total);
             // narration first, since it says how long the part is; then what shows during it
             let speak = |run: &mut dyn FnMut(&str, Value) -> Result<Value>, said: Option<String>, at: f64, least: f64| -> Result<f64> {
                 let Some(said) = said else { return Ok(least) };
@@ -466,6 +472,7 @@ impl Server {
                 segments.push(json!({ "part": "hook", "startMs": at.round(), "endMs": (at + len).round() }));
                 at += len;
             }
+            progress(3, total);
             for (i, beat) in beats.iter().enumerate() {
                 let len = speak(&mut run, line(beat, "narration"), at, 2600.0)?;
                 run("add_title", json!({ "content": headline(beat), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": t.headline_size, "align": "center", "position": { "x": centre, "y": t.headline_y }, "accent_color": t.accent, "anim_in": "words", "anim_out": "blur" }))?;
@@ -482,6 +489,7 @@ impl Server {
                 }
                 segments.push(json!({ "part": format!("beat {}", i + 1), "startMs": at.round(), "endMs": (at + len).round() }));
                 at += len;
+                progress(4 + i as u64, total);
             }
             if line(&args["end"], "title").is_some() {
                 let end = &args["end"];
@@ -520,6 +528,7 @@ impl Server {
         open.stamp = None; // narration and artwork are new files: read again
         // the picture in the app's recent projects: the piece itself, not the bare background
         let _ = sf_session::preview::write_quicklook_preview(&path);
+        progress(total, total);
         let open = self.project(&path)?;
         let out = json!({
             "project": path, "template": t.key, "durationMs": open.session.duration_ms().round(), "segments": segments,

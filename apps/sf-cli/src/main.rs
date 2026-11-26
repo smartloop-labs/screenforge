@@ -131,6 +131,9 @@ enum Cmd {
         /// A JSON file with the hook, beats and end card, as the MCP tool new_from_template takes them
         #[arg(long)]
         spec: Option<PathBuf>,
+        /// Print `progress <done> <total>` lines while the project is made (for the app)
+        #[arg(long)]
+        progress: bool,
     },
     /// List presets in the presets folder (~/Documents/ScreenForge Presets)
     Presets {
@@ -369,9 +372,16 @@ fn main() -> Result<()> {
             println!("imported {} as {}", path.display(), dest.display());
             Ok(())
         }
-        Cmd::Template { key, name, folder, spec } => {
+        Cmd::Template { key, name, folder, spec, progress } => {
             let spec = spec.map(|p| -> Result<serde_json::Value> { Ok(serde_json::from_str(&std::fs::read_to_string(&p)?)?) }).transpose()?;
-            let path = mcp::from_template(&key, name.as_deref(), folder.as_deref(), spec)?;
+            let report = move |done: u64, total: u64| {
+                if progress {
+                    use std::io::Write;
+                    println!("progress {done} {total}");
+                    let _ = std::io::stdout().flush();
+                }
+            };
+            let path = mcp::from_template(&key, name.as_deref(), folder.as_deref(), spec, &report)?;
             println!("{}", path.display());
             Ok(())
         }
