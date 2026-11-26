@@ -1,9 +1,12 @@
 //! `sf mcp`: a Model Context Protocol server on stdin/stdout, so the user's own agent (Claude
-//! Code, Codex, Cursor …) can record and edit ScreenForge projects. No AI runs here and no
-//! tokens are spent by ScreenForge: the editing tools are the same ones the app's assistant
-//! uses (`sf_agent::tools`), plus recording, importing, rendering a frame and exporting.
-//! Everything is free except `export`, which has the app's pay gate ([`export_allowed`]): the
-//! computer's free exports, then a license. An export is uploaded and answered with its link.
+//! Code, Codex, Cursor …) can record and edit ScreenForge projects. The editing tools are the
+//! same ones the app's assistant uses (`sf_agent::tools`), plus recording, importing, rendering
+//! a frame and exporting: no AI runs for them and ScreenForge spends no tokens. `ask_editor`
+//! is the exception: it hands a whole job, described in plain words, to the app's own AI editor
+//! (`sf_agent::run_turn`), so the exploring stays here and the calling agent only reads a short
+//! report. That one runs on the user's plan, as the agent panel does. Of the rest everything is
+//! free except `export`, which has the app's pay gate ([`export_allowed`]): the computer's free
+//! exports, then a license. An export is uploaded and answered with its link.
 //!
 //! ```text
 //! claude mcp add screenforge -- sf mcp
@@ -47,7 +50,9 @@ A project is a .screenforge package (a folder); pass its path as `project` to ev
 
 Getting a project: list_projects (recent ones in ~/ScreenForge Projects), start_recording + stop_recording (records the screen; the user does what they want to show in between), or import_video (an .mp4/.mov file, a .screenstudio project, or a public Loom link).
 
-How to edit:
+The short way: ask_editor does a whole job from a description (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"). ScreenForge's own AI editor looks through the recording, edits, narrates and styles it, and answers with a short report, so the transcript, the activity log and the frames never enter your context. Use it first for anything that would take more than two or three editing calls, check with render_frame, then export. It runs on the user's ScreenForge plan; when that does not include the AI editor the tool says so, and you edit with the tools below, which are free.
+
+How to edit yourself:
 - Call get_project first, and again after the user may have edited by hand. Tool times are milliseconds on the edited timeline (what plays), not in the raw recording.
 - Find moments with get_transcript (needs transcribe first), get_activity (typing, clicks, idle from the input log), get_motion and view_frames (stills of the raw screen).
 - cut takes every range of one edit in a single call (ranges refer to the timeline before the call). Leave about 100 ms around neighbouring words when cutting speech.
@@ -65,7 +70,12 @@ struct Open {
     stamp: Option<SystemTime>,
     /// The project before each edit made through this server, for `undo_answers`.
     earlier: Vec<Project>,
+    /// The chat with the app's AI editor (`ask_editor`), so a follow-up request continues it.
+    chat: sf_agent::Conversation,
 }
+
+/// What the AI editor is told in place of the app's playhead and selection.
+const EDITOR_CONTEXT: &str = "Asked by the user's own agent through ScreenForge's MCP server, not in the app: there is no playhead and nothing is selected. Nobody can answer a question during this turn, so make the sensible choice yourself and say what you chose. The agent that asked exports the video afterwards; do not open the export dialog.";
 
 struct Server {
     gpu: Option<Gpu>,
@@ -201,8 +211,8 @@ impl Server {
             if let Some(o) = &before {
                 host.keep_results(&o.host);
             }
-            let earlier = before.map(|o| o.earlier).unwrap_or_default();
-            self.open.insert(path.to_path_buf(), Open { session, host, stamp: now, earlier });
+            let (earlier, chat) = before.map(|o| (o.earlier, o.chat)).unwrap_or_default();
+            self.open.insert(path.to_path_buf(), Open { session, host, stamp: now, earlier, chat });
         }
         Ok(self.open.get_mut(path).expect("open"))
     }
@@ -263,6 +273,7 @@ impl Server {
                 match name {
                     "render_frame" => self.render_frame(&path, &args),
                     "export" => self.export(&path, &args, progress),
+                    "ask_editor" => self.ask_editor(&path, &args, progress),
                     _ => self.edit(&path, name, &args),
                 }
             }
@@ -303,6 +314,82 @@ impl Server {
             }
         }
         Ok(content)
+    }
+
+    /// Hand a request in plain words to the app's AI editor and answer with its report: what it
+    /// said, the steps it took and the new length. The project is saved after each turn. When
+    /// the editor asks for a transcript, the recording is transcribed here and the editor is
+    /// asked once more to carry on, since nobody else would ask it again.
+    fn ask_editor(&mut self, path: &Path, args: &Value, progress: &Value) -> Result<Vec<Value>> {
+        let request = args["request"].as_str().map(str::trim).filter(|r| !r.is_empty()).ok_or_else(|| anyhow!("`request` is required: what the video should become, in plain words"))?.to_string();
+        let device = sf_license::device_id().ok_or_else(|| anyhow!("ScreenForge cannot identify this computer, so its AI editor is not available. Edit with the other tools."))?;
+        let route = sf_agent::Route { url: format!("{}/functions/v1/agent", sf_license::SUPABASE_URL), anon_key: sf_license::SUPABASE_ANON_KEY.into(), device };
+        // the model chosen in the app's agent panel
+        let settings = sf_license::key_file().map(|p| sf_agent::Settings::load(&p.with_file_name("agent.json"))).unwrap_or_default();
+        if args["new_chat"].as_bool().unwrap_or(false) {
+            self.project(path)?.chat = sf_agent::Conversation::default();
+        }
+        let (mut said, mut steps, mut failed): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
+        let (mut stopped, mut credits, mut changed) = (None, Value::Null, false);
+        let mut ask = request.clone();
+        for round in 0..2 {
+            let open = self.project(path)?;
+            let mut ws = host::workspace(&open.session, open.host.clone());
+            ws.earlier = open.earlier.clone();
+            let before = ws.project.clone();
+            let (mut edited, mut transcript) = (false, None);
+            let chat = sf_agent::run_turn(&route, &settings, std::mem::take(&mut open.chat), &mut ws, &ask, EDITOR_CONTEXT, &std::sync::atomic::AtomicBool::new(false), |e| match e {
+                sf_agent::Event::Text(t) => said.push(t),
+                sf_agent::Event::Step { summary, failed: true } => failed.push(summary),
+                sf_agent::Event::Step { summary, .. } => {
+                    if !progress.is_null() {
+                        send(&json!({ "jsonrpc": "2.0", "method": "notifications/progress", "params": { "progressToken": progress, "progress": steps.len() + 1, "message": summary } }));
+                    }
+                    steps.push(summary);
+                }
+                sf_agent::Event::Changed(_) => edited = true,
+                sf_agent::Event::Action(sf_agent::Action::Transcribe { language }) => transcript = Some(language),
+                sf_agent::Event::Credits(c) => credits = c,
+                sf_agent::Event::Error(e) => stopped = Some(e),
+                _ => {}
+            });
+            open.chat = chat;
+            if edited {
+                if ws.earlier.len() < open.earlier.len() {
+                    open.earlier = ws.earlier.clone(); // the editor undid earlier answers
+                } else {
+                    open.earlier.push(before);
+                }
+                open.session.pkg.project = ws.project.clone();
+                open.session.pkg.save()?;
+                open.session.rebuild();
+                open.stamp = None; // narration, photos and music are new files: read again
+                changed = true;
+            }
+            let Some(language) = transcript.filter(|_| round == 0 && stopped.is_none()) else { break };
+            let n = transcribe(path, language)?;
+            self.open.get_mut(path).expect("open").stamp = None;
+            steps.push(format!("Transcribed on this computer: {n} words"));
+            ask = format!("The recording is transcribed now ({n} words; get_transcript has them). Carry on with the request: {request}");
+        }
+        if let (Some(e), false, true) = (&stopped, changed, steps.is_empty()) {
+            // refused before anything ran (the plan does not include the editor, no connection …)
+            return Err(anyhow!("ScreenForge's AI editor did not run: {e} Edit with the other tools instead; they need no plan."));
+        }
+        let open = self.project(path)?;
+        let mut out = json!({ "answer": said.last().cloned().unwrap_or_default(), "steps": steps, "changed": changed, "durationMs": open.session.duration_ms().round() });
+        if !failed.is_empty() {
+            out["failedSteps"] = json!(failed);
+        }
+        if let Some(e) = stopped {
+            out["stopped"] = json!(e);
+        }
+        if let Some(left) = credits["credits"].as_f64() {
+            // only the balance: the account and the price list are the app's business
+            out["aiCreditsLeft"] = json!(left.floor());
+        }
+        out["next"] = json!("Check the look with render_frame, ask again here for changes (the chat continues), then export.");
+        Ok(vec![text(out.to_string())])
     }
 
     /// The finished look at an output time, as a JPEG.
@@ -371,10 +458,17 @@ impl Server {
             }
         })?;
         let input = sf_export::details_input(&open.session, opts.range_ms);
-        let details = written_details(args, &input);
+        let mut details = written_details(args, &input);
+        // who the licences ask to be credited: under the description, and in the answer
+        let credits = credit_lines(&open.session.pkg.project, path);
+        details.description = with_credits(&details.description, &credits);
         let dtxt = sf_export::details_txt_path(&result);
         std::fs::write(&dtxt, details.to_text())?;
         let mut out = json!({ "file": result, "file_url": file_url(&result), "seconds": started.elapsed().as_secs(), "details": dtxt });
+        if !credits.is_empty() {
+            out["credits"] = json!(credits);
+            out["credits_note"] = json!("The music and photo licences ask for these lines wherever the video is published: give them to the user and put them in the caption or description as they are.");
+        }
         if free {
             // counted once the file is written (kept on this computer until the server hears)
             match sf_license::record_free_export() {
@@ -440,6 +534,46 @@ fn export_allowed() -> Result<bool> {
         )),
         Err(e) => Err(anyhow!("Without a license, export needs the license server to count this computer's free exports, and it did not answer: {e}")),
     }
+}
+
+/// The credit lines the project's licences ask for: its Creative Commons music (Jamendo tracks
+/// carry a credit file in the package) and an Unsplash background, as the app's sidebar shows.
+fn credit_lines(project: &Project, package: &Path) -> Vec<String> {
+    let p = serde_json::to_value(project).unwrap_or(Value::Null);
+    let assets = package.join("assets");
+    let mut files: Vec<String> = vec![];
+    if !p["config"]["audio"]["muteBackgroundAudio"].as_bool().unwrap_or(false) {
+        files.extend(p["config"]["audio"]["backgroundAudioFileName"].as_str().map(str::to_string));
+    }
+    // music parts that play their own track
+    for clip in p["scenes"][0]["sfMusicClips"].as_array().into_iter().flatten() {
+        files.extend(clip["track"].as_str().or(clip["fileName"].as_str()).map(str::to_string));
+    }
+    let mut lines: Vec<String> = vec![];
+    for f in files {
+        if let Some(c) = sf_services::music::credit(&assets, &f).map(|c| c.text()) {
+            if !lines.contains(&c) {
+                lines.push(c);
+            }
+        }
+    }
+    let bg = &p["config"]["styles"]["background"];
+    if bg["type"] == "unsplash" && bg["unsplash"].is_object() {
+        lines.push(sf_services::unsplash::credit(&bg["unsplash"]));
+    }
+    lines
+}
+
+/// `description` with the credits under it, leaving out one the writer already gave (told by
+/// its opening, `Music: "Title" by Artist` or `Photo by Name`, since links may differ).
+fn with_credits(description: &str, credits: &[String]) -> String {
+    let mut out = description.trim_end().to_string();
+    let missing: Vec<&String> = credits.iter().filter(|c| !description.contains(c.split(" (").next().unwrap_or(c))).collect();
+    for (i, c) in missing.iter().enumerate() {
+        out += if i == 0 && !out.is_empty() { "\n\n" } else if out.is_empty() { "" } else { "\n" };
+        out += c;
+    }
+    out
 }
 
 /// `path` as a file:// link.
@@ -560,6 +694,19 @@ pub fn tool_list() -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": { "source": { "type": "string", "description": "File path or loom.com/share link" }, "folder": folder }, "required": ["source"] }
         },
         {
+            "name": "ask_editor",
+            "description": "Hand a whole job to ScreenForge's own AI editor in plain words and get a short report back. It looks through the recording itself (transcript, typing and clicks, motion, frames), then cuts, speeds up, zooms, writes and reads the narration, picks the background and music, sets the aspect ratio, captions and titles. Use it first for anything that would take more than two or three editing calls (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"): the exploring and the frames stay inside ScreenForge and not in your context, so it costs you far fewer tokens than editing call by call. Put everything the user asked for in `request` (length, format such as 9:16 for TikTok, voice, background, music, tone, what must stay in): the editor cannot ask back. Later calls continue the same chat (\"make the zooms gentler\"); new_chat: true starts over. It runs on the user's ScreenForge plan (the AI agent that comes with Pro, or the trial allowance): when the plan does not include it the tool says so, and you edit with the other tools, which stay free. It does not export: check with render_frame, then call export. Takes a minute or more.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": project,
+                    "request": { "type": "string", "description": "What the video should become, in plain words, with every wish of the user in it" },
+                    "new_chat": { "type": "boolean", "description": "Forget the earlier requests to the editor for this project (default false)" }
+                },
+                "required": ["project", "request"]
+            }
+        },
+        {
             "name": "render_frame",
             "description": "Render the finished video at a timeline time (background, padding, zoom, cursor, captions, titles, camera) and return it as an image. Use it to check how an edit looks.",
             "inputSchema": { "type": "object", "properties": { "project": project, "at_ms": { "type": "number" }, "height": { "type": "integer", "description": "Image height, default 720" } }, "required": ["project", "at_ms"] },
@@ -567,7 +714,7 @@ pub fn tool_list() -> Vec<Value> {
         },
         {
             "name": "export",
-            "description": "Export the edited video to a file (default: next to the project, named after it), upload it and return its link: `link` is the page anyone can watch (screenforge.studio/s/…, the same link every time the project is exported), `file` and `file_url` the file on this computer. Give the user the link. Takes about as long as the video for 1080p60, plus the upload. Export is the one paid step: without a license a computer has a few free exports (free_exports_left in the result), then the tool answers with how to get Pro or Creator. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here.",
+            "description": "Export the edited video to a file (default: next to the project, named after it), upload it and return its link: `link` is the page anyone can watch (screenforge.studio/s/…, the same link every time the project is exported), `file` and `file_url` the file on this computer. Give the user the link. Takes about as long as the video for 1080p60, plus the upload. Export is the one paid step: without a license a computer has a few free exports (free_exports_left in the result), then the tool answers with how to get Pro or Creator. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here. Leave music and photo credits out of your description: ScreenForge adds the lines the licences ask for (Creative Commons music, Unsplash photos) under it and returns them as `credits`; give those to the user as they are for the caption wherever the video is published.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -638,6 +785,18 @@ mod tests {
     }
 
     #[test]
+    fn credits_go_under_the_description_once() {
+        let credits = vec!["Music: \"Born Free\" by Pokki DJ (https://www.jamendo.com/track/1179546), licensed under CC BY 3.0".to_string(), "Photo by Ann (https://unsplash.com/@ann) on Unsplash (https://unsplash.com/photos/abc)".to_string()];
+        assert_eq!(with_credits("A demo.", &credits), format!("A demo.\n\n{}\n{}", credits[0], credits[1]));
+        assert_eq!(with_credits("", &credits[..1]), credits[0]);
+        // a credit the writer gave already (other link) is not repeated
+        assert_eq!(with_credits("A demo.\nPhoto by Ann on Unsplash", &credits), format!("A demo.\nPhoto by Ann on Unsplash\n\n{}", credits[0]));
+        assert_eq!(with_credits("A demo.", &[]), "A demo.");
+        // no music and a plain background: nothing to credit
+        assert!(credit_lines(&Project::new("T"), Path::new("/nonexistent.screenforge")).is_empty());
+    }
+
+    #[test]
     fn file_links_escape_what_a_url_cannot_hold() {
         assert_eq!(file_url(Path::new("/home/me/ScreenForge Projects/My demo.mp4")), "file:///home/me/ScreenForge%20Projects/My%20demo.mp4");
         assert_eq!(file_url(Path::new("C:\\Users\\me\\a.mp4")), "file:///C:/Users/me/a.mp4");
@@ -671,6 +830,11 @@ mod tests {
         assert!(s.handle(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none());
         let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "nope" })).unwrap();
         assert_eq!(r["error"]["code"], -32601);
+        // the AI editor needs a request and a project before anything is sent anywhere
+        let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "ask_editor", "arguments": { "project": "/nonexistent.screenforge", "request": " " } } })).unwrap();
+        assert_eq!(r["result"]["isError"], true);
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("`request` is required"));
+        assert!(tool_list().iter().any(|t| t["name"] == "ask_editor" && t["inputSchema"]["required"][1] == "request"));
         let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "cut", "arguments": { "project": "/nonexistent.screenforge", "ranges": [] } } })).unwrap();
         assert_eq!(r["result"]["isError"], true);
     }

@@ -57,9 +57,18 @@ The Windows build does not ship the tool yet.
   `split`, zooms, masks, camera layouts, audio, on-device narration, titles and overlays,
   transitions, chapters, presets and every sidebar setting through `patch_project`.
   `transcribe` runs Whisper on this computer and returns when it is done.
+- **Describe the video and let ScreenForge make it**: `ask_editor` hands a whole job to
+  ScreenForge's own AI editor in plain words ("a 30 s vertical TikTok of this, narrated by
+  Eric, a mountain photo behind, music from my favourites"). The editor looks through the
+  recording, cuts, zooms, narrates and styles it, and answers with a short report. The
+  transcript, the activity log and the frames stay inside ScreenForge, so your agent spends
+  far fewer tokens than editing call by call. Later calls continue the same chat. It runs on
+  your ScreenForge plan, as the agent panel in the app does; the other tools need no plan.
 - **Check and deliver**: `render_frame` returns the finished look at any time as an image.
   `export` writes the video (mp4, hevc, prores, gif, webm) and a `.details.txt` with the
   title, description and tags the agent passes (a template from the transcript otherwise).
+  It adds the credit lines that Creative Commons music and Unsplash photos ask for under the
+  description and returns them as `credits`, ready for the caption.
 
 Every editing tool takes `project`, the path of the `.screenforge` package. Tool times are
 milliseconds on the edited timeline. Each edit is saved straight away, with `project.json.bak`
@@ -92,6 +101,9 @@ labels.
 > Record my screen while I demo the signup flow. … OK, stop. Cut the pauses, speed up the
 > typing, zoom in on the buttons I click, add a dark gradient background and captions, and
 > export it for YouTube.
+
+> Make a 25 second TikTok of my last recording: vertical, narrated by Eric, a mountain photo
+> behind it and music from my favourites. Export it and give me the caption with the credits.
 
 ## From the shell
 
