@@ -437,7 +437,10 @@ impl Session {
         let layout = self.layout_at(source_ms);
         let camera_wanted = self.camera_stream.is_some() && !cfg.camera.hide && layout.is_camera_visible();
         let frame = layout::layout_frame(&layout, &view.geometry, cfg.camera.aspect_ratio);
-        let screen_visible = frame.screen_visible || !camera_wanted;
+        // a project made from a template has no recording to show: its still video only gives
+        // the piece its length, and the project's own background is the picture
+        let hidden = cfg.output.extra.get("sfHideRecording").and_then(|v| v.as_bool()).unwrap_or(false);
+        let screen_visible = (frame.screen_visible || !camera_wanted) && !hidden;
 
         self.seek_sources(source_ms, camera_wanted)?;
 

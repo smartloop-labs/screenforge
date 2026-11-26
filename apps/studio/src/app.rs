@@ -525,6 +525,8 @@ impl App {
         match loaded.map(|session| Editor::with_session(&opened, session, self.gpu.clone())) {
             Ok(mut ed) => {
                 ed.fresh_recording = self.fresh_open.take().is_some_and(|f| f == path);
+                // a project started from a template is kept only if the user says so on closing
+                ed.fresh_template = ed.fresh_recording && (template_of(&path).is_some() || user_template_of(&path).is_some());
                 if opened != path {
                     self.prefs.recent.retain(|r| r.exists());
                 }
@@ -612,6 +614,55 @@ fn project_dialog() -> rfd::FileDialog {
 /// Ask for a project. macOS lists projects as packages (files: a folder picker greys them out);
 /// elsewhere they are folders, and one picked inside a project (after opening it in Explorer or
 /// the Linux file chooser) resolves to the project that holds it.
+/// An "open" path that stands for a new project from a template (`template:<key>`), as a
+/// pasted Loom link stands for its import.
+const TEMPLATE_SCHEME: &str = "template:";
+
+/// An "open" path that stands for a new project from a template the user saved
+/// (`template-file:<the template's path>`).
+const USER_TEMPLATE_SCHEME: &str = "template-file:";
+
+/// The saved template an "open" path stands for.
+fn user_template_of(path: &std::path::Path) -> Option<PathBuf> {
+    path.to_str().and_then(|s| s.strip_prefix(USER_TEMPLATE_SCHEME)).map(PathBuf::from)
+}
+
+/// The template an "open" path stands for.
+fn template_of(path: &std::path::Path) -> Option<&'static sf_services::templates::Template> {
+    path.to_str().and_then(|s| s.strip_prefix(TEMPLATE_SCHEME)).and_then(sf_services::templates::find)
+}
+
+/// Start a project from `template` with the `sf` tool that ships with the app, which reports
+/// each part as it is laid out; the project's path.
+fn project_from_template(template: &sf_services::templates::Template, progress: &sf_project::ImportProgress) -> anyhow::Result<PathBuf> {
+    use std::io::BufRead;
+    use std::sync::atomic::Ordering;
+    let sf = crate::agents::cli_path().ok_or_else(|| anyhow::anyhow!("The sf tool that makes template projects is not next to the app."))?;
+    // something to show at once: the tool takes a moment to start
+    progress.total.store(100, Ordering::Relaxed);
+    let mut child = std::process::Command::new(sf).args(["template", template.key, "--progress"]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
+    let mut made = None;
+    for line in std::io::BufReader::new(child.stdout.take().expect("piped")).lines().map_while(Result::ok) {
+        if progress.cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(sf_project::Error::Cancelled.into());
+        }
+        let mut words = line.split_whitespace();
+        match (words.next(), words.next().and_then(|d| d.parse::<u64>().ok()), words.next().and_then(|t| t.parse::<u64>().ok())) {
+            // kept just short of done: the project is still to be read
+            (Some("progress"), Some(done), Some(total)) if total > 0 => progress.done.store((done * 100 / total).min(99), Ordering::Relaxed),
+            _ => made = Some(PathBuf::from(line.trim())),
+        }
+    }
+    let out = child.wait_with_output()?;
+    progress.done.store(100, Ordering::Relaxed);
+    match made.filter(|p| out.status.success() && p.is_dir()) {
+        Some(p) => Ok(p),
+        None => Err(anyhow::anyhow!("The template could not be made into a project. {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or_default())),
+    }
+}
+
 fn pick_project() -> Option<PathBuf> {
     let picked = if cfg!(target_os = "macos") { project_dialog().pick_file() } else { project_dialog().pick_folder() };
     picked.map(project_root)
@@ -672,6 +723,12 @@ fn open_or_import(path: &std::path::Path, progress: &sf_project::ImportProgress)
     use std::sync::atomic::Ordering;
     if let Some(link) = loom_link(path) {
         return import_loom(&link, progress);
+    }
+    if let Some(template) = template_of(path) {
+        return project_from_template(template, progress);
+    }
+    if let Some(template) = user_template_of(path) {
+        return sf_services::templates::project_from_user_template(&template, &sf_session::create::default_projects_folder()).map_err(|e| anyhow::anyhow!(e));
     }
     if !sf_recording::import::is_video(path) {
         return sf_session::create::package_to_open(path, progress);
@@ -758,6 +815,7 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
     let gb = |b: u64| b as f64 / 1e9;
     // a video (or a project being added) reports ms of video converted, an import bytes copied
     let loom = loom_link(path).is_some();
+    let template = template_of(path);
     let video = appending || loom || sf_recording::import::is_video(path);
     let adding_video = appending && sf_recording::import::is_video(path);
     let clock = |ms: u64| short_duration(ms as f64 / 1000.0);
@@ -774,9 +832,9 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
             widgets::paint_icon(ui.painter(), egui::Rect::from_center_size(tile.center(), vec2(18.0, 18.0)), Icon::Folder, pal.accent);
             ui.vertical(|ui| {
                 ui.add_space(2.0);
-                ui.label(RichText::new(if loom { "Importing from Loom" } else if adding_video { "Adding video to project" } else if appending { "Adding project to the end" } else if video { "Importing video" } else { "Importing project" }).size(15.0).strong().color(pal.text));
+                ui.label(RichText::new(if template.is_some() { "Making the video from the template" } else if loom { "Importing from Loom" } else if adding_video { "Adding video to project" } else if appending { "Adding project to the end" } else if video { "Importing video" } else { "Importing project" }).size(15.0).strong().color(pal.text));
                 ui.add_space(3.0);
-                let name = if loom { path.to_string_lossy().into_owned() } else { path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() };
+                let name = if let Some(t) = template { t.label.to_string() } else if loom { path.to_string_lossy().into_owned() } else { path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() };
                 ui.add(egui::Label::new(RichText::new(name).size(12.5).color(pal.text_dim)).truncate());
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -793,7 +851,7 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
         ui.add_space(10.0);
 
         ui.horizontal(|ui| {
-            let amount = if loom { (if done < LOOM_STEPS / 2 { "Downloading the video…" } else { "Making the project…" }).to_string() } else if video { format!("{} of {}", clock(done), clock(total)) } else { format!("{:.2} of {:.2} GB", gb(done), gb(total)) };
+            let amount = if template.is_some() { (if done < 25 { "Drawing the background…" } else if done < 90 { "Laying out the titles and cards…" } else { "Saving the project…" }).to_string() } else if loom { (if done < LOOM_STEPS / 2 { "Downloading the video…" } else { "Making the project…" }).to_string() } else if video { format!("{} of {}", clock(done), clock(total)) } else { format!("{:.2} of {:.2} GB", gb(done), gb(total)) };
             ui.label(RichText::new(amount).size(12.5).color(pal.text_dim));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let el = started.elapsed().as_secs_f64();
@@ -809,7 +867,7 @@ fn import_dialog(ui: &mut egui::Ui, path: &std::path::Path, progress: &sf_projec
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_max_width(ui.available_width() - 100.0);
-                widgets::hint(ui, if loom { "Your Loom video stays as it is. The new project is saved to ScreenForge Projects." } else if adding_video { "The video goes after the last clip on the timeline. Your video file stays as it is." } else if appending { "Its clips go after the last one on the timeline, in this project's background and style. The project you dropped stays as it is." } else if video { "Your video stays as it is. The new project is saved to ScreenForge Projects." } else { "Your original project stays as it is. The copy is saved to ScreenForge Projects." });
+                widgets::hint(ui, if template.is_some() { "A new project with stand-in titles and cards: change any of them in the editor. It is saved to ScreenForge Projects." } else if loom { "Your Loom video stays as it is. The new project is saved to ScreenForge Projects." } else if adding_video { "The video goes after the last clip on the timeline. Your video file stays as it is." } else if appending { "Its clips go after the last one on the timeline, in this project's background and style. The project you dropped stays as it is." } else if video { "Your video stays as it is. The new project is saved to ScreenForge Projects." } else { "Your original project stays as it is. The copy is saved to ScreenForge Projects." });
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let cancel = ui.add_enabled_ui(!cancelling, |ui| widgets::secondary_button(ui, "Cancel").on_hover_text("Esc")).inner;
@@ -980,6 +1038,12 @@ fn short_duration(secs: f64) -> String {
 }
 
 fn ed_name(p: &std::path::Path) -> String {
+    if let Some(t) = template_of(p) {
+        return t.label.to_string();
+    }
+    if let Some(t) = user_template_of(p) {
+        return t.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    }
     p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
@@ -1256,9 +1320,10 @@ impl eframe::App for App {
         if let (Some(quit), Screen::Editor(ed)) = (self.confirm_close, &mut self.screen) {
             let mut choice: Option<bool> = None; // Some(true) = keep, Some(false) = delete
             let mut cancel = false;
-            egui::Window::new("Keep this recording?").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            let (question, what) = if ed.fresh_template { ("Keep this project?", "was just made from a template") } else { ("Keep this recording?", "was just recorded") };
+            egui::Window::new(question).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
                 ui.set_max_width(380.0);
-                ui.label(egui::RichText::new(format!("“{}” was just recorded. Keep it in your projects, or move it to the Trash?", ed.session.pkg.project.name)).color(crate::theme::p().text));
+                ui.label(egui::RichText::new(format!("“{}” {what}. Keep it in your projects, or move it to the Trash?", ed.session.pkg.project.name)).color(crate::theme::p().text));
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if crate::widgets::accent_button(ui, "Keep").clicked() { choice = Some(true); }
@@ -1341,6 +1406,28 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("New project".into()));
             }
             Some(PickerAction::OpenProjectDialog) => self.ask(ctx, pick_project, &mut open_request),
+            // opened like an import: the editor window with the progress dialog, then the project
+            Some(PickerAction::NewFromUserTemplate(template)) => {
+                let request = PathBuf::from(format!("{USER_TEMPLATE_SCHEME}{}", template.display()));
+                self.fresh_open = Some(request.clone());
+                open_request = Some(request);
+            }
+            Some(PickerAction::RemoveTemplate(p)) => {
+                let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                match crate::os::move_to_trash(&p) {
+                    Ok(()) => {
+                        if let Screen::Picker(pk) = &mut self.screen {
+                            pk.set_status(format!("Moved the template “{name}” to the Trash"));
+                        }
+                    }
+                    Err(e) => self.error = Some(format!("Could not move the template “{name}” to the Trash: {e}")),
+                }
+            }
+            Some(PickerAction::NewFromTemplate(key)) => {
+                let request = PathBuf::from(format!("{TEMPLATE_SCHEME}{key}"));
+                self.fresh_open = Some(request.clone());
+                open_request = Some(request);
+            }
             Some(PickerAction::StartRecording(mut req)) => {
                 if let Some(msg) = crate::recorder::check_permissions(&mut req) {
                     self.error = Some(msg);

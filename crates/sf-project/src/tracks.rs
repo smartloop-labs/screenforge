@@ -294,6 +294,36 @@ fn is_zero(v: &f64) -> bool {
 }
 
 impl Clip {
+    /// The group a clip belongs to (`sfGroup`): clips of one group are moved and deleted
+    /// together in the editor, like the parts of a card. Ungrouping remembers the group in
+    /// `sfWasGroup`, so the parts can be grouped again.
+    const GROUP: &'static str = "sfGroup";
+    const WAS_GROUP: &'static str = "sfWasGroup";
+
+    pub fn group(&self) -> Option<&str> {
+        self.extra.get(Self::GROUP).and_then(Value::as_str).filter(|g| !g.is_empty())
+    }
+
+    /// The group it was in before it was ungrouped.
+    pub fn was_group(&self) -> Option<&str> {
+        self.extra.get(Self::WAS_GROUP).and_then(Value::as_str).filter(|g| !g.is_empty())
+    }
+
+    /// Put the clip in `group`, or take it out of its group (which is remembered).
+    pub fn set_group(&mut self, group: Option<&str>) {
+        match group.map(str::trim).filter(|g| !g.is_empty()) {
+            Some(g) => {
+                self.extra.insert(Self::GROUP.into(), Value::from(g));
+                self.extra.remove(Self::WAS_GROUP);
+            }
+            None => {
+                if let Some(old) = self.extra.remove(Self::GROUP) {
+                    self.extra.insert(Self::WAS_GROUP.into(), old);
+                }
+            }
+        }
+    }
+
     pub const MIN_DURATION_MS: f64 = 200.0;
     pub const TITLE_MS: f64 = 3000.0;
     pub const PLACEMENTS: [&'static str; 7] = ["full", "center", "pip-br", "pip-bl", "pip-tr", "pip-tl", "custom"];
@@ -426,6 +456,36 @@ pub fn add_clip(tracks: &mut Vec<Track>, clip: Clip) -> usize {
     i
 }
 
+/// The ids of the clips grouped with clip `id`, itself included (only itself when it is in no
+/// group or not there).
+pub fn group_members(tracks: &[Track], id: &str) -> Vec<String> {
+    let all = || tracks.iter().flat_map(|t| &t.clips);
+    match all().find(|c| c.id == id).and_then(|c| c.group()) {
+        Some(g) => all().filter(|c| c.group() == Some(g)).map(|c| c.id.clone()).collect(),
+        None => vec![id.to_string()],
+    }
+}
+
+/// Take every clip out of `group`. True when there was one.
+pub fn ungroup(tracks: &mut [Track], group: &str) -> bool {
+    let mut found = false;
+    for c in tracks.iter_mut().flat_map(|t| t.clips.iter_mut()).filter(|c| c.group() == Some(group)) {
+        c.set_group(None);
+        found = true;
+    }
+    found
+}
+
+/// Group again the clips that were ungrouped from `group`. True when there was one.
+pub fn regroup(tracks: &mut [Track], group: &str) -> bool {
+    let mut found = false;
+    for c in tracks.iter_mut().flat_map(|t| t.clips.iter_mut()).filter(|c| c.was_group() == Some(group)) {
+        c.set_group(Some(group));
+        found = true;
+    }
+    found
+}
+
 /// The clip with `id` on any track, mutably.
 pub fn find_clip_mut<'a>(tracks: &'a mut [Track], id: &str) -> Option<&'a mut Clip> {
     tracks.iter_mut().flat_map(|t| t.clips.iter_mut()).find(|c| c.id == id)
@@ -472,6 +532,32 @@ pub fn split_clip(tracks: &mut [Track], id: &str, t: f64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn groups_are_set_ungrouped_and_grouped_again() {
+        let mut tracks = vec![];
+        let ids: Vec<String> = ["Panel text", "Row one", "Alone"].iter().enumerate().map(|(i, w)| {
+            let mut c = Clip::title(1000.0, 2000.0, w);
+            if i < 2 {
+                c.set_group(Some("card1"));
+            }
+            let id = c.id.clone();
+            add_clip(&mut tracks, c);
+            id
+        }).collect();
+        assert_eq!(group_members(&tracks, &ids[0]), vec![ids[0].clone(), ids[1].clone()]);
+        assert_eq!(group_members(&tracks, &ids[2]), vec![ids[2].clone()]);
+        // the group is written with the clip and read back
+        let json = serde_json::to_value(&tracks).unwrap();
+        assert_eq!(json[0]["clips"][0]["sfGroup"], "card1");
+        let back: Vec<Track> = serde_json::from_value(json).unwrap();
+        assert_eq!(group_members(&back, &ids[1]).len(), 2);
+        assert!(ungroup(&mut tracks, "card1") && !ungroup(&mut tracks, "card1"));
+        assert_eq!(group_members(&tracks, &ids[0]), vec![ids[0].clone()]);
+        assert_eq!(tracks.iter().flat_map(|t| &t.clips).find(|c| c.id == ids[0]).unwrap().was_group(), Some("card1"));
+        assert!(regroup(&mut tracks, "card1"));
+        assert_eq!(group_members(&tracks, &ids[1]).len(), 2);
+    }
 
     #[test]
     fn tracks_round_trip_through_the_scene_and_keep_unknown_fields() {

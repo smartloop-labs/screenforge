@@ -41,16 +41,19 @@ pub struct LaneDrag {
     clip: Clip,
     /// Length of the clip's video, so trimming stops at its ends.
     media_ms: Option<f64>,
+    /// The other clips of its group as drawn when the drag began: a move takes them along.
+    others: Vec<Clip>,
     snapshot: Project,
 }
 
 /// A title or overlay being moved on the preview.
 pub struct PreviewDrag {
-    id: String,
     from: Pos2,
     /// Its rect when the drag began (output px).
     rect: sf_project::schema::common::Rect,
     clip: Clip,
+    /// The other clips of its group, each with its rect when the drag began: they move along.
+    others: Vec<(Clip, sf_project::schema::common::Rect)>,
     snapshot: Project,
 }
 
@@ -90,6 +93,41 @@ fn live_clip(ed: &mut Editor, id: &str, f: impl FnOnce(&mut Clip)) {
     ed.session.pkg.project.scenes[0].set_tracks(t);
     ed.session.rebuild();
     ed.invalidate_preview();
+}
+
+/// The clips grouped with `id`, without `id` itself, as the project has them.
+fn group_mates(ed: &Editor, id: &str) -> Vec<Clip> {
+    let t = ed.session.pkg.project.scenes[0].tracks();
+    let ids = tracks::group_members(&t, id);
+    t.iter().flat_map(|t| &t.clips).filter(|c| c.id != id && ids.contains(&c.id)).cloned().collect()
+}
+
+/// Take the clips of `id`'s group out of it, or put the ones ungrouped from it back.
+fn set_grouped(ed: &mut Editor, group: String, on: bool) {
+    ed.edit(move |p| {
+        let mut t = p.scenes[0].tracks();
+        if on {
+            tracks::regroup(&mut t, &group);
+        } else {
+            tracks::ungroup(&mut t, &group);
+        }
+        p.scenes[0].set_tracks(t);
+    });
+    ed.set_status(if on { "Grouped: the parts move together" } else { "Ungrouped: each part moves on its own" });
+}
+
+/// Delete every clip of `id`'s group.
+fn remove_group(ed: &mut Editor, id: &str) {
+    let ids = tracks::group_members(&ed.session.pkg.project.scenes[0].tracks(), id);
+    ed.selected_clip = None;
+    ed.edit(move |p| {
+        let mut t = p.scenes[0].tracks();
+        for id in &ids {
+            tracks::remove_clip(&mut t, id);
+        }
+        p.scenes[0].set_tracks(t);
+    });
+    ed.set_status("Removed the group");
 }
 
 /// The clip with `id` as the session draws it (linked start resolved).
@@ -367,7 +405,16 @@ fn start_lane_drag(ed: &mut Editor, c: &Clip, kind: DragKind, grab_ms: f64) {
     let media_ms = c.media.as_ref().and_then(|id| media.iter().find(|m| &m.id == id)).filter(|m| m.kind == MediaKind::Video).and_then(|m| m.duration_ms);
     let mut clip = c.clone();
     clip.output_start_ms = clip_start(c, &ed.session.timeline).unwrap_or(c.output_start_ms);
-    ed.layers.lane_drag = Some(LaneDrag { id: c.id.clone(), kind, grab_ms, clip, media_ms, snapshot: ed.session.pkg.project.clone() });
+    // a move takes the rest of the group along; a trim is the one clip's own
+    let others = if kind == DragKind::Move {
+        group_mates(ed, &c.id).into_iter().map(|mut o| {
+            o.output_start_ms = clip_start(&o, &ed.session.timeline).unwrap_or(o.output_start_ms);
+            o
+        }).collect()
+    } else {
+        vec![]
+    };
+    ed.layers.lane_drag = Some(LaneDrag { id: c.id.clone(), kind, grab_ms, clip, media_ms, others, snapshot: ed.session.pkg.project.clone() });
 }
 
 /// Follow the pointer with the clip being dragged; one undo step when the button is released.
@@ -408,12 +455,31 @@ fn drive_lane_drag(ed: &mut Editor, ui: &egui::Ui, ms_of: impl Fn(f32) -> f64) {
         let lane = ed.session.visuals.tracks.iter().find(|t| t.clips.iter().any(|c| c.id == drag.id));
         let timeline = ed.session.timeline.clone();
         let free = lane.is_none_or(|t| t.clips.iter().filter(|c| c.id != drag.id).filter_map(|c| clip_start(c, &timeline).map(|s| (s, s + c.output_duration_ms()))).all(|(s, e)| end <= s + 0.5 || start >= e - 0.5));
-        if free {
-            live_clip(ed, &drag.id, |c| {
+        // the rest of the group moves by as much, when every one of them has room: inside
+        // the video, and clear of the clips on its lane that are not of the group
+        let by = start - start0;
+        let ids: Vec<&str> = drag.others.iter().map(|o| o.id.as_str()).chain([drag.id.as_str()]).collect();
+        let room = drag.others.iter().all(|o| {
+            let (s, e) = (o.output_start_ms + by, o.output_end_ms() + by);
+            let lane = ed.session.visuals.tracks.iter().find(|t| t.clips.iter().any(|c| c.id == o.id));
+            s >= -0.5 && e <= duration + 0.5 && lane.is_none_or(|t| t.clips.iter().filter(|c| !ids.contains(&c.id.as_str())).filter_map(|c| clip_start(c, &timeline).map(|cs| (cs, cs + c.output_duration_ms()))).all(|(cs, ce)| e <= cs + 0.5 || s >= ce - 0.5))
+        });
+        let free = free || (!drag.others.is_empty() && lane.is_none_or(|t| t.clips.iter().filter(|c| !ids.contains(&c.id.as_str())).filter_map(|c| clip_start(c, &timeline).map(|s| (s, s + c.output_duration_ms()))).all(|(s, e)| end <= s + 0.5 || start >= e - 0.5)));
+        if free && room {
+            let mut t = ed.session.pkg.project.scenes[0].tracks();
+            if let Some(c) = tracks::find_clip_mut(&mut t, &drag.id) {
                 set_start(c, start, &timeline);
                 c.source_start_ms = src_start;
                 c.source_end_ms = src_end;
-            });
+            }
+            for o in &drag.others {
+                if let Some(c) = tracks::find_clip_mut(&mut t, &o.id) {
+                    set_start(c, (o.output_start_ms + by).max(0.0), &timeline);
+                }
+            }
+            ed.session.pkg.project.scenes[0].set_tracks(t);
+            ed.session.rebuild();
+            ed.invalidate_preview();
         }
     }
     ed.layers.lane_drag = Some(drag);
@@ -442,9 +508,24 @@ fn clip_menu(ed: &mut Editor, ui: &mut egui::Ui, id: &str, at_ms: f64) {
         });
         ui.close();
     }
+    if let Some(group) = c.group().map(str::to_string) {
+        if ui.button("Ungroup").on_hover_text("Move and delete each part on its own").clicked() {
+            set_grouped(ed, group, false);
+            ui.close();
+        }
+    } else if let Some(group) = c.was_group().map(str::to_string) {
+        if ui.button("Group again").on_hover_text("Move the parts together as before").clicked() {
+            set_grouped(ed, group, true);
+            ui.close();
+        }
+    }
     ui.separator();
     if ui.button("Delete").clicked() {
         remove(ed, id);
+        ui.close();
+    }
+    if c.group().is_some() && ui.button("Delete the group").clicked() {
+        remove_group(ed, id);
         ui.close();
     }
 }
@@ -582,7 +663,19 @@ pub fn clip_item_ui(ed: &mut Editor, ui: &mut egui::Ui) {
     };
     let is_title = c.text.is_some();
     widgets::title(ui, if is_title { "Title" } else { "Over the recording" });
-    widgets::hint(ui, "Drag it on the preview to move it.");
+    if let Some(group) = c.group().map(str::to_string) {
+        widgets::hint(ui, "Part of a group: dragging it moves the whole group. Ungroup to move this part on its own.");
+        if widgets::secondary_button(ui, "Ungroup").clicked() {
+            set_grouped(ed, group, false);
+        }
+    } else if let Some(group) = c.was_group().map(str::to_string) {
+        widgets::hint(ui, "Drag it on the preview to move it. It was part of a group.");
+        if widgets::secondary_button(ui, "Group again").clicked() {
+            set_grouped(ed, group, true);
+        }
+    } else {
+        widgets::hint(ui, "Drag it on the preview to move it.");
+    }
 
     if let Some(style) = &c.text {
         // typing edits live; the whole change is one undo step once the field is left
@@ -734,6 +827,16 @@ pub fn preview_ui(ed: &mut Editor, ui: &mut egui::Ui, img: Rect) -> bool {
     let mut drawn: Vec<(String, sf_project::schema::common::Rect)> = ed.session.visuals.drawn.iter().map(|(id, r)| (id.clone(), *r)).collect();
     drawn.sort_by(|a, b| (b.1.width * b.1.height).total_cmp(&(a.1.width * a.1.height)));
     let titles: std::collections::HashSet<String> = ed.session.visuals.tracks.iter().flat_map(|t| &t.clips).filter(|c| c.text.is_some()).map(|c| c.id.clone()).collect();
+    // the group of the selected clip: one frame around all of its parts
+    if let Some(sel) = ed.selected_clip.clone() {
+        let mates: Vec<String> = group_mates(ed, &sel).into_iter().map(|c| c.id).collect();
+        if !mates.is_empty() {
+            let around = drawn.iter().filter(|(id, _)| *id == sel || mates.contains(id)).map(|(_, r)| on_screen(r)).reduce(|a, b| a.union(b));
+            if let Some(frame) = around {
+                ui.painter().rect_stroke(frame.expand(7.0), 2.0, Stroke::new(1.0, theme::p().accent.gamma_multiply(0.55)), egui::StrokeKind::Outside);
+            }
+        }
+    }
     for (id, r) in &drawn {
         let frame = on_screen(r);
         let selected = ed.selected_clip.as_deref() == Some(id.as_str());
@@ -758,7 +861,8 @@ pub fn preview_ui(ed: &mut Editor, ui: &mut egui::Ui, img: Rect) -> bool {
         if resp.drag_started() {
             ed.select_clip(id.clone());
             if let (Some(p), Some(c)) = (resp.interact_pointer_pos(), ed.session.pkg.project.scenes[0].tracks().iter().flat_map(|t| &t.clips).find(|c| &c.id == id).cloned()) {
-                ed.layers.preview_drag = Some(PreviewDrag { id: id.clone(), from: p, rect: *r, clip: c, snapshot: ed.session.pkg.project.clone() });
+                let others = group_mates(ed, id).into_iter().filter_map(|o| drawn.iter().find(|(i, _)| *i == o.id).map(|(_, r)| (o, *r))).collect();
+                ed.layers.preview_drag = Some(PreviewDrag { from: p, rect: *r, clip: c, others, snapshot: ed.session.pkg.project.clone() });
             }
         }
     }
@@ -776,8 +880,7 @@ fn drive_preview_drag(ed: &mut Editor, ui: &egui::Ui, k: f32, w: f64, h: f64) ->
     }
     if let Some(p) = pos {
         let (dx, dy) = (((p.x - drag.from.x) / k) as f64 / w, ((p.y - drag.from.y) / k) as f64 / h);
-        let (c0, r0) = (drag.clip.clone(), drag.rect);
-        live_clip(ed, &drag.id, |c| {
+        let shift = |c: &mut Clip, c0: &Clip, r0: sf_project::schema::common::Rect| {
             if let (Some(t), Some(t0)) = (c.text.as_mut(), c0.text.as_ref()) {
                 t.position01.x = (t0.position01.x + dx).clamp(0.0, 1.0);
                 t.position01.y = (t0.position01.y + dy).clamp(0.0, 1.0);
@@ -787,7 +890,17 @@ fn drive_preview_drag(ed: &mut Editor, ui: &egui::Ui, k: f32, w: f64, h: f64) ->
                 c.placement = Some("custom".into());
                 c.rect01 = Some(sf_project::schema::common::Rect { x: base.x + dx, y: base.y + dy, ..base });
             }
-        });
+        };
+        // the dragged clip and the rest of its group, by the same amount
+        let mut t = ed.session.pkg.project.scenes[0].tracks();
+        for (c0, r0) in std::iter::once((&drag.clip, drag.rect)).chain(drag.others.iter().map(|(c, r)| (c, *r))) {
+            if let Some(c) = tracks::find_clip_mut(&mut t, &c0.id) {
+                shift(c, c0, r0);
+            }
+        }
+        ed.session.pkg.project.scenes[0].set_tracks(t);
+        ed.session.rebuild();
+        ed.invalidate_preview();
     }
     ed.layers.preview_drag = Some(drag);
     ui.ctx().request_repaint();

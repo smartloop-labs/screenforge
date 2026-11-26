@@ -122,6 +122,13 @@ pub enum PickerAction {
     OpenProjectDialog,
     /// An empty project window to drop a video into.
     NewProject,
+    /// A project from the template with this key (a video without a recording), with stand-in
+    /// titles and cards to change in the editor.
+    NewFromTemplate(String),
+    /// A project from a template the user saved (its package's path).
+    NewFromUserTemplate(PathBuf),
+    /// Move a template the user saved to the Trash.
+    RemoveTemplate(PathBuf),
     StartRecording(RecordRequest),
     /// Open the drag-to-select overlay; the app starts the recording with the chosen rect.
     SelectArea(RecordRequest),
@@ -231,6 +238,12 @@ pub struct Picker {
     /// out after [`STATUS_FOR`] or when the recent panel closes, whichever comes first.
     status: Option<(String, std::time::Instant)>,
     pub show_recent: bool,
+    /// The recent panel shows the templates in place of the recent projects.
+    show_templates: bool,
+    /// The templates' pictures, loaded when the templates are first shown.
+    template_pictures: std::collections::HashMap<&'static str, egui::TextureHandle>,
+    /// The pictures of the templates the user saved, by package path (`None`: it has none).
+    user_pictures: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
     /// When the recent panel last closed: the window stays tall for a moment so a quick
     /// re-open does not resize it (and lose the click) again.
     recent_closed_at: Option<std::time::Instant>,
@@ -252,7 +265,7 @@ pub struct Picker {
 
 impl Default for Picker {
     fn default() -> Self {
-        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: false, recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
+        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), show_templates: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), template_pictures: Default::default(), user_pictures: Default::default(), recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
     }
 }
 
@@ -310,12 +323,13 @@ impl Picker {
         let mut texts: Vec<String> = [
             "Don't record camera", "Don't record microphone", "Don't record system audio", "Record system audio from all apps",
             "Recording countdown", "None", "3 seconds", "5 seconds", "10 seconds", "Appearance", "Match system", "Light", "Dark", "Osaka Jade", "Quit ScreenForge",
-            "RECENT PROJECTS", "Open", "New", "No projects yet. Record something or open a project.", "Loading…", "No preview", "0123456789 min h d ago", "Move to Trash",
+            "RECENT PROJECTS", "TEMPLATES", "Templates", "Recent", "Open", "New", "No projects yet. Record something or open a project.", "Loading…", "No preview", "0123456789 min h d ago", "Move to Trash",
         ]
         .map(String::from)
         .to_vec();
         texts.extend(self.inputs.cameras.iter().chain(&self.inputs.microphones).map(|d| d.name.clone()));
         texts.extend(prefs.recent.iter().filter_map(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()));
+        texts.extend(sf_services::templates::TEMPLATES.iter().flat_map(|t| [t.label.to_string(), "No recording needed".to_string()]));
         ui.fonts_mut(|f| {
             for t in &texts {
                 for font in &fonts {
@@ -651,7 +665,7 @@ impl Picker {
         }
         if self.show_recent && !folder_clicked {
             let other_click = ui.input(|i| i.pointer.any_click()) && !self.pointer_in_recent(ui);
-            let closes = action.is_some() && !matches!(action, Some(PickerAction::RemoveProject(_)));
+            let closes = action.is_some() && !matches!(action, Some(PickerAction::RemoveProject(_) | PickerAction::RemoveTemplate(_)));
             if closes || egui::Popup::is_any_open(ui.ctx()) || other_click {
                 self.show_recent = false;
                 self.recent_closed_at = Some(std::time::Instant::now());
@@ -681,8 +695,12 @@ impl Picker {
         p.rect(rect, CornerRadius::same(RECENT_RADIUS), tint, Stroke::new(1.0, theme::p().glass_border), egui::StrokeKind::Inside);
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(14.0)).layout(egui::Layout::top_down(egui::Align::Min)));
         inner.horizontal(|ui| {
-            ui.label(RichText::new("RECENT PROJECTS").small().color(theme::p().text_dim));
+            ui.label(RichText::new(if self.show_templates { "TEMPLATES" } else { "RECENT PROJECTS" }).small().color(theme::p().text_dim));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (word, tip) = if self.show_templates { ("Recent", "Back to your recent projects") } else { ("Templates", "Start a video from a template: no recording needed") };
+                if open_button(ui, if self.show_templates { widgets::Icon::Folder } else { widgets::Icon::Sparkle }, word, tip).clicked() {
+                    self.show_templates = !self.show_templates;
+                }
                 if open_button(ui, widgets::Icon::Folder, "Open", "Open a project, or import a Screen Studio project").clicked() {
                     *action = Some(PickerAction::OpenProjectDialog);
                 }
@@ -692,6 +710,41 @@ impl Picker {
             });
         });
         inner.add_space(6.0);
+        if self.show_templates {
+            // more templates than fit: trackpad or wheel scrolling, as for the recent projects
+            egui::ScrollArea::horizontal().id_salt("template_cards").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut inner, |ui| {
+                ui.horizontal(|ui| {
+                    // the templates the user saved come first, each with the picture its
+                    // project had; the trash button moves one to the Trash
+                    let yours = sf_services::templates::user_folder().map(|f| sf_services::templates::user_templates(&f)).unwrap_or_default();
+                    for t in &yours {
+                        let picture = self.user_pictures.entry(t.path.clone()).or_insert_with(|| {
+                            let img = image::open(t.picture()).ok()?.thumbnail(528, 330).to_rgba8();
+                            let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], &img);
+                            Some(ui.ctx().load_texture(format!("user-template-{}", t.name), ci, egui::TextureOptions::LINEAR))
+                        });
+                        let (card, trash) = project_card(ui, &t.path, picture.as_ref(), false);
+                        if trash {
+                            *action = Some(PickerAction::RemoveTemplate(t.path.clone()));
+                        } else if card.on_hover_text("Your template: a new project that starts as the one you saved").clicked() {
+                            *action = Some(PickerAction::NewFromUserTemplate(t.path.clone()));
+                        }
+                    }
+                    for t in &sf_services::templates::TEMPLATES {
+                        if !self.template_pictures.contains_key(t.key) {
+                            if let Some(img) = template_picture(t.key).and_then(|png| image::load_from_memory(png).ok()).map(|i| i.to_rgba8()) {
+                                let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], &img);
+                                self.template_pictures.insert(t.key, ui.ctx().load_texture(format!("template-{}", t.key), ci, egui::TextureOptions::LINEAR));
+                            }
+                        }
+                        if template_card(ui, t, self.template_pictures.get(t.key)).clicked() {
+                            *action = Some(PickerAction::NewFromTemplate(t.key.to_string()));
+                        }
+                    }
+                });
+            });
+            return;
+        }
         let recent: Vec<PathBuf> = prefs.recent.iter().filter(|p| p.exists()).cloned().collect();
         if recent.is_empty() {
             inner.label(RichText::new("No projects yet. Record something or open a project.").color(theme::p().text_dim));
@@ -930,6 +983,16 @@ fn project_card(ui: &mut Ui, path: &std::path::Path, tex: Option<&egui::TextureH
         {
             let (w, h) = (texture.size()[0] as f32, texture.size()[1] as f32);
             let target = thumb.width() / thumb.height();
+            // a vertical video is shown whole, standing in the middle of the card: filling the
+            // card would show only a band across its middle
+            if w / h < 0.9 {
+                p.rect_filled(thumb, CornerRadius::same(8), theme::p().thumb_empty);
+                let tall = egui::Rect::from_center_size(thumb.center(), vec2(thumb.height() * w / h, thumb.height()));
+                let mut mesh = egui::Mesh::with_texture(texture.id());
+                mesh.add_rect_with_uv(tall, egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                p.add(egui::Shape::mesh(mesh));
+                drawn = true;
+            }
             let uv = if w / h > target {
                 let f = (h * target) / w;
                 egui::Rect::from_min_max(pos2((1.0 - f) / 2.0, 0.0), pos2((1.0 + f) / 2.0, 1.0))
@@ -937,10 +1000,12 @@ fn project_card(ui: &mut Ui, path: &std::path::Path, tex: Option<&egui::TextureH
                 let f = (w / target) / h;
                 egui::Rect::from_min_max(pos2(0.0, (1.0 - f) / 2.0), pos2(1.0, (1.0 + f) / 2.0))
             };
-            let mut mesh = egui::Mesh::with_texture(texture.id());
-            mesh.add_rect_with_uv(thumb, uv, Color32::WHITE);
-            p.add(egui::Shape::mesh(mesh));
-            drawn = true;
+            if !drawn {
+                let mut mesh = egui::Mesh::with_texture(texture.id());
+                mesh.add_rect_with_uv(thumb, uv, Color32::WHITE);
+                p.add(egui::Shape::mesh(mesh));
+                drawn = true;
+            }
         }
     }
     if !drawn {
@@ -971,6 +1036,77 @@ fn project_card(ui: &mut Ui, path: &std::path::Path, tex: Option<&egui::TextureH
     let trash_clicked = trash.clicked();
     let _ = trash.on_hover_text("Move to Trash");
     (resp.on_hover_cursor(egui::CursorIcon::PointingHand), trash_clicked)
+}
+
+/// A colour a template gives as `#rrggbb` (its own artwork, not the app's palette).
+fn template_color(hex: &str, alpha: u8) -> Color32 {
+    let v = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0);
+    Color32::from_rgba_unmultiplied((v >> 16) as u8, (v >> 8) as u8, v as u8, alpha)
+}
+
+/// The picture of template `key` for the Templates view: its first beat, rendered from a
+/// project made with the template (scripts/gen-template-previews.sh writes them).
+fn template_picture(key: &str) -> Option<&'static [u8]> {
+    Some(match key {
+        "feature-short" => include_bytes!("../assets/templates/feature-short.png"),
+        "how-to-steps" => include_bytes!("../assets/templates/how-to-steps.png"),
+        "announcement" => include_bytes!("../assets/templates/announcement.png"),
+        "top-three" => include_bytes!("../assets/templates/top-three.png"),
+        "quick-tip" => include_bytes!("../assets/templates/quick-tip.png"),
+        "did-you-know" => include_bytes!("../assets/templates/did-you-know.png"),
+        "before-after" => include_bytes!("../assets/templates/before-after.png"),
+        "testimonial" => include_bytes!("../assets/templates/testimonial.png"),
+        "sale" => include_bytes!("../assets/templates/sale.png"),
+        _ => return None,
+    })
+}
+
+/// A template in the panel: its picture (or, without one, a sketch of its look: background,
+/// glows, a headline and a card), its name and a line under it. The size of a project card.
+fn template_card(ui: &mut Ui, t: &sf_services::templates::Template, picture: Option<&egui::TextureHandle>) -> egui::Response {
+    let size = CARD_SIZE;
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let thumb = egui::Rect::from_min_size(rect.min, vec2(size.x, 110.0));
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(rect.expand(4.0), CornerRadius::same(12), theme::glass_alpha(14));
+    }
+    p.rect_filled(thumb, CornerRadius::same(8), template_color(t.base, 255));
+    if let Some(texture) = picture {
+        // the picture has the thumbnail's proportions
+        let mut mesh = egui::Mesh::with_texture(texture.id());
+        mesh.add_rect_with_uv(thumb, egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        p.add(egui::Shape::mesh(mesh));
+        p.rect_stroke(thumb, 8.0, Stroke::new(3.0, theme::p().glass_solid), egui::StrokeKind::Outside);
+        // the words sit a little in from the picture's edge, with air between the two lines
+        p.text(pos2(rect.left() + 2.0, thumb.bottom() + 9.0), Align2::LEFT_TOP, t.label, FontId::proportional(13.0), theme::p().text);
+        p.text(pos2(rect.left() + 2.0, rect.bottom() - 4.0), Align2::LEFT_BOTTOM, "No recording needed", FontId::proportional(11.0), theme::p().text_dim);
+        return resp.on_hover_text(t.about);
+    }
+    let art = p.with_clip_rect(thumb);
+    // the glows, as a few rings fading out
+    for (color, x, y, r) in t.glows {
+        let c = pos2(thumb.left() + x as f32 * thumb.width(), thumb.top() + y as f32 * thumb.height());
+        for step in 1..=6 {
+            art.circle_filled(c, r as f32 * thumb.height() * step as f32 / 6.0, template_color(color, 14));
+        }
+    }
+    // a headline in two lines and a card under it, as the template lays a beat out
+    let cx = thumb.center().x;
+    art.rect_filled(egui::Rect::from_center_size(pos2(cx, thumb.top() + 22.0), vec2(70.0, 7.0)), CornerRadius::same(2), template_color(sf_services::templates::TEXT, 235));
+    art.rect_filled(egui::Rect::from_center_size(pos2(cx, thumb.top() + 34.0), vec2(92.0, 7.0)), CornerRadius::same(2), template_color(t.accent, 255));
+    let card = egui::Rect::from_center_size(pos2(cx, thumb.top() + 74.0), vec2(96.0, 50.0));
+    art.rect_filled(card, CornerRadius::same(5), template_color(t.panel, 245));
+    for row in 0..3 {
+        let y = card.top() + 12.0 + row as f32 * 13.0;
+        art.circle_filled(pos2(card.left() + 12.0, y), 3.5, template_color(t.accent, 255));
+        art.rect_filled(egui::Rect::from_min_size(pos2(card.left() + 21.0, y - 2.5), vec2(58.0 - row as f32 * 9.0, 5.0)), CornerRadius::same(2), template_color(sf_services::templates::TEXT, 150));
+    }
+    p.rect_stroke(thumb, 8.0, Stroke::new(3.0, theme::p().glass_solid), egui::StrokeKind::Outside);
+    p.text(pos2(rect.left(), thumb.bottom() + 8.0), Align2::LEFT_TOP, t.label, FontId::proportional(13.0), theme::p().text);
+    p.text(pos2(rect.left(), rect.bottom() - 6.0), Align2::LEFT_BOTTOM, "No recording needed", FontId::proportional(11.0), theme::p().text_dim);
+    resp.on_hover_text(t.about)
 }
 
 /// An icon and a word for the recent-projects panel ("Open", "New"): quiet on the glass,
@@ -1005,4 +1141,16 @@ fn page_dots(ui: &mut Ui, cx: f32, cy: f32, pages: usize, current: usize) -> Opt
         }
     }
     clicked
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_template_has_its_picture() {
+        for t in &sf_services::templates::TEMPLATES {
+            let png = super::template_picture(t.key).unwrap_or_else(|| panic!("no picture for {}: run scripts/gen-template-previews.sh and add it to template_picture", t.key));
+            let img = image::load_from_memory(png).unwrap();
+            assert_eq!((img.width(), img.height()), (528, 330), "{}", t.key);
+        }
+    }
 }

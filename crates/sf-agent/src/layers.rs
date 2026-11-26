@@ -51,6 +51,7 @@ pub fn definitions() -> Vec<Value> {
         "shadow": { "type": "boolean", "description": "A soft shadow under the letters" },
         "anim_in": anim, "anim_out": anim,
         "pinned": { "type": "boolean", "description": "Default true: stays with its moment of the recording when earlier footage is cut. false: fixed time in the final video" },
+        "group": { "type": "string", "description": "A name shared by clips that belong together (the parts of a card): in the editor they are moved and deleted as one until the user ungroups them. Empty takes the clip out of its group" },
     });
     merge(&mut add_title, &title_props);
     let mut add_overlay = json!({
@@ -61,6 +62,7 @@ pub fn definitions() -> Vec<Value> {
         "shadow": { "type": "number", "description": "Drop shadow, 0–1" },
         "anim_in": anim, "anim_out": anim,
         "pinned": { "type": "boolean", "description": "Default true, as for titles" },
+        "group": { "type": "string", "description": "A name shared by clips that belong together (the parts of a card): in the editor they are moved and deleted as one until the user ungroups them. Empty takes the clip out of its group" },
     });
     merge(&mut add_overlay, &overlay_props);
     let mut update = json!({
@@ -71,6 +73,7 @@ pub fn definitions() -> Vec<Value> {
         "anim_in": anim, "anim_out": anim,
         "anim_ms": { "type": "number", "description": "Length of both animations, 100–2000 ms" },
         "pinned": { "type": "boolean" },
+        "group": { "type": "string", "description": "A name shared by clips that belong together (the parts of a card): in the editor they are moved and deleted as one until the user ungroups them. Empty takes the clip out of its group" },
         "hidden": { "type": "boolean", "description": "Hide or show the whole lane the clip is on" },
     });
     merge(&mut update, &title_props);
@@ -388,6 +391,7 @@ impl Workspace {
         keep_clear(crate::host::Format::of(&self.project), clip.text.as_mut().expect("title"));
         apply_anims(&mut clip, input)?;
         Self::pin(&tl, &mut clip, input.get("pinned").and_then(Value::as_bool).unwrap_or(true));
+        clip.set_group(input.get("group").and_then(Value::as_str));
         let id = clip.id.clone();
         let mut t = self.project.scenes[0].tracks();
         tracks::add_clip(&mut t, clip);
@@ -414,6 +418,7 @@ impl Workspace {
         apply_overlay(&mut clip, input)?;
         apply_anims(&mut clip, input)?;
         Self::pin(&tl, &mut clip, input.get("pinned").and_then(Value::as_bool).unwrap_or(true));
+        clip.set_group(input.get("group").and_then(Value::as_str));
         let id = clip.id.clone();
         let name = item.path.rsplit('/').next().unwrap_or(&item.path).to_string();
         let scene = &mut self.project.scenes[0];
@@ -452,6 +457,10 @@ impl Workspace {
             apply_overlay(c, input)?;
         }
         apply_anims(c, input)?;
+        // "group": a name puts it in that group, null or "" takes it out
+        if let Some(g) = input.get("group") {
+            c.set_group(g.as_str());
+        }
         if let Some(p) = input.get("pinned").and_then(Value::as_bool) {
             c.output_start_ms = start;
             Self::pin(&tl, c, p);
@@ -518,6 +527,9 @@ impl Workspace {
                     "animOut": c.anim_out.as_ref().map(|a| a.kind.clone()),
                 });
                 let mut v = common;
+                if let Some(g) = c.group() {
+                    v["group"] = json!(g);
+                }
                 if let Some(s) = &c.text {
                     merge(&mut v, &json!({ "content": s.content, "subtitle": s.subtitle, "font": s.font, "sizeRatio": s.size_ratio, "align": s.align, "position": { "x": s.position01.x, "y": s.position01.y } }));
                     titles.push(v);

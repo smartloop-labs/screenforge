@@ -169,6 +169,35 @@ pub fn shift_output_items(scene: &mut Scene, at: f64, delta: f64) {
     scene.set_tracks(tracks);
 }
 
+/// Keep titles and overlays arranged as they were designed when the video's shape changes
+/// from `old` to `new` (width / height). The arrangement was made for a frame of shape
+/// `design`; it is shown whole and centred in any other frame, as large as fits (a vertical
+/// design in a wide frame keeps its size and sits in the middle), so going back to the design's
+/// shape puts everything exactly where it was.
+pub fn refit_layers(scene: &mut Scene, design: f64, old: f64, new: f64) {
+    if !(design > 0.0 && old > 0.0 && new > 0.0) || (old - new).abs() < 1e-9 {
+        return;
+    }
+    // how large the design is drawn in a frame of shape `a`, as a fraction of its height
+    let scale = |a: f64| (a / design).min(1.0);
+    let (s0, s1) = (scale(old), scale(new));
+    // x and y of a point: back to the design's frame, then into the new one
+    let x = |v: f64| 0.5 + (v - 0.5) * (old / (s0 * design)) * (s1 * design / new);
+    let y = |v: f64| 0.5 + (v - 0.5) / s0 * s1;
+    let (kw, kh) = ((old / (s0 * design)) * (s1 * design / new), s1 / s0);
+    let mut tracks = scene.tracks();
+    for c in tracks.iter_mut().flat_map(|t| t.clips.iter_mut()) {
+        if let Some(t) = c.text.as_mut() {
+            t.position01 = sf_project::schema::common::Point::new(x(t.position01.x), y(t.position01.y));
+            t.size_ratio *= kh;
+        }
+        if let Some(r) = c.rect01.as_mut() {
+            *r = sf_project::schema::common::Rect { x: x(r.x), y: y(r.y), width: r.width * kw, height: r.height * kh };
+        }
+    }
+    scene.set_tracks(tracks);
+}
+
 /// Insert a title card `duration_ms` long before slice `index` (at the end when past it).
 /// Returns its output start.
 pub fn insert_card(scene: &mut Scene, index: usize, duration_ms: f64) -> f64 {
@@ -242,6 +271,47 @@ pub fn add_title_card(scene: &mut Scene, index: usize, text: &str, duration_ms: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layers_keep_their_arrangement_across_frame_shapes_and_come_back() {
+        let mut scene = Scene::recording("s", 0);
+        let mut tracks = vec![];
+        let mut title = Clip::title(0.0, 2000.0, "Headline");
+        title.text.as_mut().unwrap().position01 = sf_project::schema::common::Point::new(0.465, 0.22);
+        title.text.as_mut().unwrap().size_ratio = 0.046;
+        let mut card = Clip::title(0.0, 2000.0, "x");
+        card.text = None;
+        card.rect01 = Some(sf_project::schema::common::Rect { x: 0.075, y: 0.3, width: 0.78, height: 0.33 });
+        tr::add_clip(&mut tracks, title);
+        tr::add_clip(&mut tracks, card);
+        scene.set_tracks(tracks);
+        let read = |s: &Scene| {
+            let t = s.tracks();
+            let all: Vec<&Clip> = t.iter().flat_map(|t| &t.clips).collect();
+            let text = all.iter().find_map(|c| c.text.as_ref()).unwrap().clone();
+            (text.position01.x, text.position01.y, text.size_ratio, all.iter().find_map(|c| c.rect01).unwrap())
+        };
+        let before = read(&scene);
+        let (v, w) = (9.0 / 16.0, 16.0 / 9.0);
+        // vertical to wide: the same height, a narrower share of the width, still centred
+        refit_layers(&mut scene, v, v, w);
+        let wide = read(&scene);
+        assert!((wide.1 - before.1).abs() < 1e-9 && (wide.2 - before.2).abs() < 1e-9);
+        assert!((wide.3.height - before.3.height).abs() < 1e-9 && (wide.3.width - before.3.width * v / w).abs() < 1e-9);
+        // the card keeps its shape in pixels: width / height times the frame's shape
+        assert!(((wide.3.width / wide.3.height * w) - (before.3.width / before.3.height * v)).abs() < 1e-9);
+        assert!(wide.3.x > 0.3 && wide.3.x + wide.3.width < 0.7);
+        // wide to square, then back to vertical: where it started
+        refit_layers(&mut scene, v, w, 1.0);
+        refit_layers(&mut scene, v, 1.0, v);
+        let back = read(&scene);
+        assert!((back.0 - before.0).abs() < 1e-9 && (back.1 - before.1).abs() < 1e-9 && (back.2 - before.2).abs() < 1e-9);
+        assert!((back.3.x - before.3.x).abs() < 1e-9 && (back.3.width - before.3.width).abs() < 1e-9 && (back.3.y - before.3.y).abs() < 1e-9);
+        // a frame narrower than the design: the design is made smaller to fit its width
+        refit_layers(&mut scene, v, v, 0.4);
+        let narrow = read(&scene);
+        assert!(narrow.2 < before.2 && (narrow.3.width - before.3.width).abs() < 1e-9);
+    }
     use sf_project::tracks::{ClipAnim, Link};
 
     fn tl(slices: &[Slice]) -> Timeline {

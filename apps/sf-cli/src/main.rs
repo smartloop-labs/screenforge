@@ -11,7 +11,6 @@ use sf_session::Session;
 mod host;
 mod mcp;
 mod record;
-mod templates;
 
 #[derive(Parser)]
 #[command(name = "sf", version, about = "ScreenForge – open source screen recorder and editor")]
@@ -119,6 +118,23 @@ enum Cmd {
     /// Add another project to the end of a project and save it (the other one is only read).
     /// Like dropping a project on an open one in the app.
     Join { project: PathBuf, other: PathBuf },
+    /// Start a project from a template (a video without a recording) and print its path.
+    /// Without --spec it holds stand-in titles and cards to change in the app
+    Template {
+        /// feature-short, how-to-steps or announcement
+        key: String,
+        #[arg(long)]
+        name: Option<String>,
+        /// Projects folder (default ~/ScreenForge Projects)
+        #[arg(long)]
+        folder: Option<PathBuf>,
+        /// A JSON file with the hook, beats and end card, as the MCP tool new_from_template takes them
+        #[arg(long)]
+        spec: Option<PathBuf>,
+        /// Print `progress <done> <total>` lines while the project is made (for the app)
+        #[arg(long)]
+        progress: bool,
+    },
     /// List presets in the presets folder (~/Documents/ScreenForge Presets)
     Presets {
         #[arg(long)]
@@ -354,6 +370,19 @@ fn main() -> Result<()> {
             let folder = to.unwrap_or_else(sf_session::create::default_projects_folder);
             let dest = sf_project::package::import_screen_studio(&path, &folder)?;
             println!("imported {} as {}", path.display(), dest.display());
+            Ok(())
+        }
+        Cmd::Template { key, name, folder, spec, progress } => {
+            let spec = spec.map(|p| -> Result<serde_json::Value> { Ok(serde_json::from_str(&std::fs::read_to_string(&p)?)?) }).transpose()?;
+            let report = move |done: u64, total: u64| {
+                if progress {
+                    use std::io::Write;
+                    println!("progress {done} {total}");
+                    let _ = std::io::stdout().flush();
+                }
+            };
+            let path = mcp::from_template(&key, name.as_deref(), folder.as_deref(), spec, &report)?;
+            println!("{}", path.display());
             Ok(())
         }
         Cmd::Join { project, other } => {

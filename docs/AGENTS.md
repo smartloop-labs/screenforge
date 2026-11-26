@@ -70,12 +70,30 @@ The Windows build does not ship the tool yet.
   with the call to action, that makes a vertical feature short of the kind a motion-graphics
   tool produces, and it stays a ScreenForge project you can change by hand.
 - **Templates, for a video without a recording**: `list_templates` shows the built-in ones
-  (a feature short, a how-to in steps, an announcement) and how to draw a card;
+  (feature short, how-to in steps, announcement, top three, quick tip, did you know, before
+  and after, testimonial, sale) and how to give a card. A card given as an object (a list, a
+  checklist, a figure, a quote, a comparison, a price, a mock window) is laid out as separate
+  elements, each shape an overlay and each piece of text a title, so every one can be
+  selected, moved, retyped or deleted in the app; a card given as SVG is one image.
+  The picture behind is the project's own background (the template's gradient), so it fills a
+  frame of any shape and is changed in the Background panel; in the app, choosing another
+  shape (wide, square) keeps the titles and cards arranged as they were, centred.
+  The elements of a card share a group: in the editor, dragging one moves the whole card (on
+  the preview and on the timeline) until you choose *Ungroup*; *Group again* puts them back.
   `new_from_template` makes the video from what the agent writes: a hook, up to eight beats
-  (a two-line headline, a spoken sentence and a card drawn as SVG) and an end card with a
-  button and a web address. Each part lasts as long as its narration, which is read aloud and
+  (a two-line headline, a spoken sentence and a card drawn as SVG) and an end card with the
+  product's logo, a button and a web address. Each part lasts as long as its narration, which is read aloud and
   captioned. The result is an ordinary 1080×1920 project: every title, card and narration
   take can be changed afterwards, by the agent or by hand in ScreenForge.
+  In the app the same templates are under *Templates* in the recent-projects panel: choosing
+  one makes the project with stand-in titles and cards to change by hand. From the shell:
+  `sf template feature-short` (add `--spec file.json` for your own words and cards).
+- **Your own templates**: `save_as_template` keeps a project as it is now (titles, cards,
+  narration, music, footage) in `~/Documents/ScreenForge Templates`; `list_templates` shows
+  them under `yours`, and `new_from_template` with that name starts a new project as a copy.
+  In the app: *Presets → Save project as template*, then *Templates* on the start panel. A
+  template is a folder ending in `.screenforgetemplate`: copy it to another computer's
+  templates folder to share it.
 - **Artwork the agent draws**: `add_overlay` takes `svg` in place of a file, so an agent can
   put an illustration, a diagram or a card over any video.
 - **TikTok, Reels and Shorts**: `set_format` makes the video 1080×1920 and keeps the text
