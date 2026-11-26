@@ -33,6 +33,12 @@ older than 0.1.66: point the user to https://screenforge.studio (or
   4. `stop_recording` makes the project and returns its path. Automatic zooms around the
      clicks are added unless `auto_zooms` is false.
 
+Nothing to record (an explainer, a feature video, an announcement, a how-to)? Call
+`list_templates`, then `new_from_template` with a hook, the beats (a two-line headline, one
+spoken sentence, and a card you draw as SVG following the guide `list_templates` returns) and
+an end card. It returns an ordinary project: add music, check each part with `render_frame`,
+then continue with step 3.
+
 ## 2. Edit
 
 **The short way: `ask_editor`.** When the user describes the video they want ("a 30 s vertical

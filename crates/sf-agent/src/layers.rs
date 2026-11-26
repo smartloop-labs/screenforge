@@ -55,6 +55,7 @@ pub fn definitions() -> Vec<Value> {
     merge(&mut add_title, &title_props);
     let mut add_overlay = json!({
         "path": { "type": "string", "description": "An image (png, jpg, webp …) or video (mp4, mov, webm) file the user named" },
+        "svg": { "type": "string", "description": "In place of path: artwork written as SVG markup (<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 860 736\">…</svg>), drawn to an image" },
         "start_ms": { "type": "number" },
         "duration_ms": { "type": "number", "description": "Default 4000, or the video's length" },
         "shadow": { "type": "number", "description": "Drop shadow, 0–1" },
@@ -82,8 +83,8 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "add_overlay",
-            "description": "Show an image or video file over the recording for a while (a product card, a screenshot, b-roll): centred by default, full frame, picture-in-picture in a corner, or a custom rect. Videos play silently. backdrop_blur and backdrop_dim put the recording behind out of focus so the overlay stands out.",
-            "input_schema": { "type": "object", "properties": add_overlay, "required": ["path", "start_ms"] }
+            "description": "Show an image or video file over the recording for a while (a product card, a screenshot, b-roll), or artwork you draw yourself as SVG (`svg` in place of `path`: an illustration, an icon, a diagram, a mock panel, a list card; transparent where nothing is drawn; give it a viewBox, text in font-family Inter or Montserrat at 34 px or more for a 860 px wide card, a few words only). Centred by default, full frame, picture-in-picture in a corner, or a custom rect (draw the SVG in the rect's proportions). Videos play silently. backdrop_blur and backdrop_dim put the recording behind out of focus so the overlay stands out.",
+            "input_schema": { "type": "object", "properties": add_overlay, "required": ["start_ms"] }
         }),
         json!({
             "name": "update_clip",
@@ -396,10 +397,14 @@ impl Workspace {
     }
 
     fn add_overlay(&mut self, input: &Value) -> Result<Outcome, String> {
-        let path = input.get("path").and_then(Value::as_str).ok_or("`path` is required")?;
         let tl = self.timeline();
         let start = num(input, "start_ms")?;
-        let item = self.host.as_deref().ok_or("not available here (no editor)")?.import_media(path)?;
+        let host = self.host.as_deref().ok_or("not available here (no editor)")?;
+        let item = match (input.get("path").and_then(Value::as_str), input.get("svg").and_then(Value::as_str).filter(|s| !s.trim().is_empty())) {
+            (_, Some(svg)) => host.import_svg(svg)?,
+            (Some(path), None) => host.import_media(path)?,
+            (None, None) => return Err("give `path` (an image or video file) or `svg` (artwork you write)".into()),
+        };
         if item.kind == MediaKind::Audio {
             return Err("that is an audio file: use import_file with use_as music, or add_narration".into());
         }

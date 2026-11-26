@@ -298,6 +298,10 @@ impl Host for LocalHost {
         }
         media::import(&self.project_dir, &src)
     }
+
+    fn import_svg(&self, svg: &str) -> Result<sf_project::tracks::MediaItem, String> {
+        crate::svg::import(&self.project_dir, svg)
+    }
 }
 
 #[cfg(test)]

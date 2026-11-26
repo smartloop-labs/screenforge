@@ -69,6 +69,15 @@ The Windows build does not ship the tool yet.
   footage timed to the narration, highlight captions, transitions, music and a closing card
   with the call to action, that makes a vertical feature short of the kind a motion-graphics
   tool produces, and it stays a ScreenForge project you can change by hand.
+- **Templates, for a video without a recording**: `list_templates` shows the built-in ones
+  (a feature short, a how-to in steps, an announcement) and how to draw a card;
+  `new_from_template` makes the video from what the agent writes: a hook, up to eight beats
+  (a two-line headline, a spoken sentence and a card drawn as SVG) and an end card with a
+  button and a web address. Each part lasts as long as its narration, which is read aloud and
+  captioned. The result is an ordinary 1080×1920 project: every title, card and narration
+  take can be changed afterwards, by the agent or by hand in ScreenForge.
+- **Artwork the agent draws**: `add_overlay` takes `svg` in place of a file, so an agent can
+  put an illustration, a diagram or a card over any video.
 - **TikTok, Reels and Shorts**: `set_format` makes the video 1080×1920 and keeps the text
   inside the platform's safe area, the part of the frame the app's own caption, buttons and
   tabs leave clear. Captions sit just above the covered bottom, titles are moved in (and
@@ -113,6 +122,9 @@ labels.
 > Record my screen while I demo the signup flow. … OK, stop. Cut the pauses, speed up the
 > typing, zoom in on the buttons I click, add a dark gradient background and captions, and
 > export it for YouTube.
+
+> Make a 20 second feature short about our new export presets from the feature-short
+> template, narrated by Eric, with music from my favourites.
 
 > Make a 25 second TikTok of my last recording: vertical, narrated by Eric, a mountain photo
 > behind it and music from my favourites. Export it and give me the caption with the credits.

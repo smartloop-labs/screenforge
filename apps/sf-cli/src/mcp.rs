@@ -34,6 +34,7 @@ use sf_services::host::LocalHost;
 
 use crate::host;
 use crate::record;
+use crate::templates;
 
 /// Protocol versions this server speaks, newest first.
 const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -53,6 +54,8 @@ Getting a project: list_projects (recent ones in ~/ScreenForge Projects), start_
 The short way: ask_editor does a whole job from a description (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"). ScreenForge's own AI editor looks through the recording, edits, narrates and styles it, and answers with a short report, so the transcript, the activity log and the frames never enter your context. Use it first for anything that would take more than two or three editing calls, check with render_frame, then export. It runs on the user's ScreenForge plan; when that does not include the AI editor the tool says so, and you edit with the tools below, which are free.
 
 A promo or feature video (a short for TikTok, Reels or Shorts, in the style of a motion-graphics explainer) is built from the same pieces, and stays a project the user can open and change in ScreenForge (open_project): set_format with the platform (tiktok, reels or shorts: it sets 1080×1920 and keeps titles and captions inside the safe area the app leaves clear, so no text sits under its buttons or caption); a title card as the hook (add_title_card, two or three big words with the key one starred); the footage with short headlines over it timed to the narration (add_title, 2–4 s each, near the top); narration in short sentences (add_narration) with highlight captions; more shots with join_project and a transition at each cut (set_transition); music kept low (set_music 0.15–0.25); and a closing title card with the call to action and the web address as its subtitle. ask_editor does all of this from one description.
+
+With nothing to record (an explainer, a feature video, an announcement, a how-to): list_templates, then new_from_template. You write the hook, the beats (a headline, a spoken sentence and a card you draw as SVG) and the end card; ScreenForge lays them out in 1080×1920, narrates and captions them, and the result is a project like any other.
 
 How to edit yourself:
 - Call get_project first, and again after the user may have edited by hand. Tool times are milliseconds on the edited timeline (what plays), not in the raw recording.
@@ -261,6 +264,8 @@ impl Server {
                 rec.cancel();
                 Ok(vec![text("Recording deleted.")])
             }
+            "list_templates" => Ok(vec![text(json!({ "templates": templates::TEMPLATES.iter().map(templates::Template::json).collect::<Vec<_>>(), "cardCanvas": { "width": templates::CARD_W, "height": templates::CARD_H }, "cards": templates::card_guide() }).to_string())]),
+            "new_from_template" => self.new_from_template(&args),
             "import_video" => {
                 let src = args["source"].as_str().ok_or_else(|| anyhow!("`source` is required"))?;
                 let src = if sf_recording::loom::is_link(src) { src.to_string() } else { expand(src).to_string_lossy().into_owned() };
@@ -318,6 +323,129 @@ impl Server {
             }
         }
         Ok(content)
+    }
+
+    /// One editing tool on `path`, answered with the JSON it returns.
+    fn run(&mut self, path: &Path, name: &str, args: Value) -> Result<Value> {
+        let content = self.edit(path, name, &args).with_context(|| name.to_string())?;
+        let said = content.first().and_then(|c| c["text"].as_str()).unwrap_or_default();
+        Ok(said.split_once('\n').and_then(|(_, j)| serde_json::from_str(j).ok()).unwrap_or(Value::Null))
+    }
+
+    /// A video without a recording, from a template: the template's background becomes the
+    /// project's "recording" (a still video), and the hook, the beats and the end card are laid
+    /// over it with the ordinary tools, each as long as its narration.
+    fn new_from_template(&mut self, args: &Value) -> Result<Vec<Value>> {
+        let t = templates::find(args["template"].as_str().unwrap_or_default()).ok_or_else(|| anyhow!("unknown template: list_templates shows the ones there are"))?;
+        let beats = args["beats"].as_array().cloned().unwrap_or_default();
+        if beats.is_empty() || beats.len() > 8 {
+            return Err(anyhow!("`beats` takes 1 to 8 beats, each {{ line1, line2, narration, card }}"));
+        }
+        let line = |v: &Value, k: &str| v[k].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        for (i, b) in beats.iter().enumerate() {
+            if line(b, "line1").is_none() {
+                return Err(anyhow!("beat {} has no line1 (its headline)", i + 1));
+            }
+        }
+        let name = templates::file_stem(args["name"].as_str().unwrap_or(t.label));
+        // the background as a still video, long enough for any piece; the rest is cut at the end
+        const SECONDS: f64 = 180.0;
+        let tmp = std::env::temp_dir().join(format!("sf-template-{}-{}", std::process::id(), chrono::Local::now().format("%H%M%S%3f")));
+        std::fs::create_dir_all(&tmp)?;
+        let made = (|| -> Result<PathBuf> {
+            let (png, _, _) = sf_services::svg::render(&t.background_svg(), templates::HEIGHT as u32).map_err(|e| anyhow!(e))?;
+            let still = tmp.join("background.png");
+            std::fs::write(&still, png)?;
+            let video = tmp.join(format!("{name}.mp4"));
+            let ok = sf_media::ffmpeg::ffmpeg_cmd()?.arg("-y").args(["-loop", "1", "-framerate", "30", "-i"]).arg(&still).args(["-t", &SECONDS.to_string(), "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "30"]).arg(&video).status()?.success();
+            if !ok {
+                return Err(anyhow!("could not make the template's background video"));
+            }
+            record::import_video(&video.to_string_lossy(), args["folder"].as_str().map(expand).as_deref())
+        })();
+        let _ = std::fs::remove_dir_all(&tmp);
+        let path = made?;
+        let platform = args["platform"].as_str().unwrap_or("tiktok");
+        // the background fills the frame: no padding, corners, shadow, cursor or phone frame
+        self.run(&path, "patch_project", json!({ "ops": [
+            { "op": "add", "path": "/name", "value": name },
+            { "op": "add", "path": "/config/output/paddingRatio01", "value": 0 },
+            { "op": "add", "path": "/config/styles/screenBorderRadius", "value": 0 },
+            { "op": "add", "path": "/config/styles/shadow/intensity", "value": 0 },
+            { "op": "add", "path": "/config/cursor/hide", "value": true },
+            { "op": "add", "path": "/config/device/enableMockup", "value": false },
+            { "op": "add", "path": "/config/styles/background/type", "value": "color" },
+            { "op": "add", "path": "/config/styles/background/color", "value": t.base },
+            { "op": "add", "path": "/config/captions/font", "value": "heavy" },
+            { "op": "add", "path": "/config/captions/sfStyle", "value": "highlight" },
+            { "op": "add", "path": "/config/captions/sfHighlightColor", "value": t.accent },
+            { "op": "add", "path": "/config/captions/enableTranscript", "value": true },
+        ] }))?;
+        self.run(&path, "set_format", json!({ "platform": platform }))?;
+        let voice = line(args, "voice");
+        let mut at = 0.0;
+        let mut segments = vec![];
+        // narration first, since it says how long the segment is; then what shows during it
+        let speak = |server: &mut Server, said: Option<String>, at: f64, least: f64| -> Result<f64> {
+            let Some(said) = said else { return Ok(least) };
+            let mut a = json!({ "text": said, "start_ms": at + 150.0 });
+            if let Some(v) = &voice {
+                a["voice"] = json!(v);
+            }
+            let end = server.run(&path, "add_narration", a)?["endMs"].as_f64().unwrap_or(at + least);
+            Ok((end - at + 450.0).max(least))
+        };
+        let headline = |v: &Value| match (line(v, "line1"), line(v, "line2")) {
+            (Some(a), Some(b)) => format!("{a}\n*{b}*"),
+            (Some(a), None) => a,
+            _ => String::new(),
+        };
+        let centre = (0.056 + 0.87) / 2.0;
+        if line(&args["hook"], "line1").is_some() {
+            let hook = &args["hook"];
+            let len = speak(self, line(hook, "narration"), at, 2200.0)?;
+            self.run(&path, "add_title", json!({ "content": headline(hook), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": 0.07, "align": "center", "position": { "x": centre, "y": 0.4 }, "accent_color": t.accent, "anim_in": "rise", "anim_out": "blur" }))?;
+            segments.push(json!({ "part": "hook", "startMs": at.round(), "endMs": (at + len).round() }));
+            at += len;
+        }
+        for (i, beat) in beats.iter().enumerate() {
+            let len = speak(self, line(beat, "narration"), at, 2600.0)?;
+            self.run(&path, "add_title", json!({ "content": headline(beat), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": t.headline_size, "align": "center", "position": { "x": centre, "y": t.headline_y }, "accent_color": t.accent, "anim_in": "words", "anim_out": "blur" }))?;
+            if t.steps {
+                self.run(&path, "add_title", json!({ "content": format!("*STEP {}*", i + 1), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": 0.021, "align": "center", "position": { "x": centre, "y": 0.142 }, "accent_color": t.accent, "anim_in": "fade", "anim_out": "fade" }))?;
+            }
+            if let Some(svg) = line(beat, "card") {
+                let [x, y, w, h] = t.card;
+                self.run(&path, "add_overlay", json!({ "svg": svg, "start_ms": at + 200.0, "duration_ms": len - 260.0, "rect": { "x": x, "y": y, "width": w, "height": h }, "shadow": 0, "anim_in": t.card_in, "anim_out": "fade" })).with_context(|| format!("the card of beat {}", i + 1))?;
+            }
+            segments.push(json!({ "part": format!("beat {}", i + 1), "startMs": at.round(), "endMs": (at + len).round() }));
+            at += len;
+        }
+        if line(&args["end"], "title").is_some() {
+            let end = &args["end"];
+            let len = speak(self, line(end, "narration"), at, 3200.0)?;
+            let mut title = json!({ "content": line(end, "title"), "start_ms": at, "duration_ms": len - 40.0, "font": "heavy", "size_ratio": 0.062, "align": "center", "position": { "x": centre, "y": 0.36 }, "accent_color": t.accent, "anim_in": "rise", "anim_out": "none" });
+            if let Some(tagline) = line(end, "tagline") {
+                title["subtitle"] = json!(tagline);
+            }
+            self.run(&path, "add_title", title)?;
+            if let Some(cta) = line(end, "cta") {
+                self.run(&path, "add_overlay", json!({ "svg": t.button_svg(&cta), "start_ms": at + 500.0, "duration_ms": len - 540.0, "rect": { "x": 0.075, "y": 0.47, "width": 0.78, "height": 0.066 }, "shadow": 0, "anim_in": "zoom", "anim_out": "none" }))?;
+            }
+            if let Some(url) = line(end, "url") {
+                self.run(&path, "add_title", json!({ "content": url, "start_ms": at + 700.0, "duration_ms": len - 740.0, "font": "sans-serif", "size_ratio": 0.024, "align": "center", "position": { "x": centre, "y": 0.58 }, "color": "#c9c6d6", "anim_in": "fade", "anim_out": "none" }))?;
+            }
+            segments.push(json!({ "part": "end card", "startMs": at.round(), "endMs": (at + len).round() }));
+            at += len;
+        }
+        // the unused rest of the background
+        self.run(&path, "cut", json!({ "ranges": [{ "start_ms": at, "end_ms": SECONDS * 1000.0 }] }))?;
+        let open = self.project(&path)?;
+        let out = json!({
+            "project": path, "template": t.key, "durationMs": open.session.duration_ms().round(), "segments": segments,
+            "next": "It is an ordinary project now. Add music the user likes (get_options favoriteMusic, use_music, volume 0.15–0.25), look at each part with render_frame, change any title, card or narration with the editing tools, open_project to show it in ScreenForge, then export.",
+        });
+        Ok(vec![text(out.to_string())])
     }
 
     /// Add another project, or a video file (imported as a project first), to the end of this
@@ -761,6 +889,38 @@ pub fn tool_list() -> Vec<Value> {
             "name": "open_project",
             "description": "Open the project in the ScreenForge app so the user can watch it and go on editing by hand. Use it when they ask to see or edit the video in ScreenForge, or after ask_editor so they can adjust the result. Your later edits show up there as you make them.",
             "inputSchema": { "type": "object", "properties": { "project": project }, "required": ["project"] }
+        },
+        {
+            "name": "list_templates",
+            "description": "The templates for a video made without a recording (a feature short, a how-to in steps, an announcement): each one's look and what to write for it, its colours, and how to draw the cards. Read it before new_from_template.",
+            "inputSchema": { "type": "object", "properties": {} },
+            "annotations": { "readOnlyHint": true }
+        },
+        {
+            "name": "new_from_template",
+            "description": format!("Make a video from a template, without any recording: a motion-graphics short built from what you write. Give the hook, the beats and the end card; each part lasts as long as its narration, which is read aloud and captioned. A beat is a two-line headline (line2 is drawn in the accent colour) over a card you draw. {} The result is an ordinary project in 1080×1920 with titles and captions inside the platform's safe area: change anything afterwards with the editing tools, and the user can open it in ScreenForge. Returns the project path and each part's times. Use it when the user asks for an explainer, a feature video, an announcement or a how-to and there is nothing to record, or names a template.", templates::card_guide()),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "template": { "type": "string", "enum": templates::TEMPLATES.iter().map(|t| t.key).collect::<Vec<_>>() },
+                    "name": { "type": "string", "description": "Project name" },
+                    "platform": { "type": "string", "enum": ["tiktok", "reels", "shorts"], "description": "Default tiktok" },
+                    "voice": { "type": "string", "description": "Narrator, when the user names one (el_eric, am_fenrir …, as add_narration); left out, the one chosen in the Narration panel" },
+                    "hook": { "type": "object", "description": "The opening: two or three big words per line", "properties": { "line1": { "type": "string" }, "line2": { "type": "string" }, "narration": { "type": "string" } } },
+                    "beats": {
+                        "type": "array", "minItems": 1, "maxItems": 8,
+                        "items": { "type": "object", "properties": {
+                            "line1": { "type": "string", "description": "Headline, first line: two to four words" },
+                            "line2": { "type": "string", "description": "Second line, in the accent colour" },
+                            "narration": { "type": "string", "description": "One spoken sentence for this beat" },
+                            "card": { "type": "string", "description": "The beat's card as SVG markup" }
+                        }, "required": ["line1"] }
+                    },
+                    "end": { "type": "object", "description": "The closing card", "properties": { "title": { "type": "string", "description": "The product or brand name" }, "tagline": { "type": "string" }, "cta": { "type": "string", "description": "The button's words, e.g. Download free today" }, "url": { "type": "string" }, "narration": { "type": "string" } } },
+                    "folder": folder
+                },
+                "required": ["template", "beats"]
+            }
         },
         {
             "name": "render_frame",

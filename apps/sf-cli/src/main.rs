@@ -11,6 +11,7 @@ use sf_session::Session;
 mod host;
 mod mcp;
 mod record;
+mod templates;
 
 #[derive(Parser)]
 #[command(name = "sf", version, about = "ScreenForge – open source screen recorder and editor")]

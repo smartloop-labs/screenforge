@@ -52,6 +52,11 @@ pub trait Host: Send + Sync {
         let _ = path;
         Err("adding images and videos over the recording is not available here".into())
     }
+    /// Draw artwork written as SVG to an image in the project's media folder, for an overlay.
+    fn import_svg(&self, svg: &str) -> Result<sf_project::tracks::MediaItem, String> {
+        let _ = svg;
+        Err("drawing SVG artwork is not available here".into())
+    }
     /// Read `text` aloud with AI voice `voice` (a [`VOICES`] id, or one of the options'
     /// `cloudVoices`) at `speed`, in `language` (an ISO 639-1 code for ElevenLabs; `None`:
     /// English), saved in the project's voice-over folder with its words for captions.
