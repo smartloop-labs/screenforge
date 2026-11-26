@@ -429,7 +429,7 @@ impl Server {
             };
             // elements laid out on a canvas `CARD_W` wide that sits in `area` of the frame:
             // each shape an overlay of its own, each piece of text a title
-            let place = |run: &mut dyn FnMut(&str, Value) -> Result<Value>, els: &[Element], area: [f64; 4], canvas_h: f64, at: f64, len: f64, anim: &str| -> Result<()> {
+            let place = |run: &mut dyn FnMut(&str, Value) -> Result<Value>, els: &[Element], area: [f64; 4], canvas_h: f64, at: f64, len: f64, anim: &str, group: &str| -> Result<()> {
                 let [ax, ay, aw, ah] = area;
                 // the first track is drawn on top: words go in first, then the shapes from the
                 // front one to the panel at the back, so each lands under the ones before it
@@ -441,12 +441,12 @@ impl Server {
                     let (start, dur) = (at + 60.0 * i as f64, (len - 60.0 * i as f64).max(500.0));
                     match e {
                         Element::Shape { svg, x, y, w, h } => {
-                            run("add_overlay", json!({ "svg": svg, "start_ms": start, "duration_ms": dur, "rect": { "x": ax + x / CARD_W * aw, "y": ay + y / canvas_h * ah, "width": w / CARD_W * aw, "height": h / canvas_h * ah }, "shadow": 0, "anim_in": anim, "anim_out": "fade" }))?;
+                            run("add_overlay", json!({ "svg": svg, "start_ms": start, "duration_ms": dur, "rect": { "x": ax + x / CARD_W * aw, "y": ay + y / canvas_h * ah, "width": w / CARD_W * aw, "height": h / canvas_h * ah }, "shadow": 0, "anim_in": anim, "anim_out": "fade", "group": group }))?;
                         }
                         Element::Text { text, x, y, size, align, color, heavy } => {
                             // a title's size is its line height; the canvas sizes are letter sizes, a third larger
                             let size_ratio = (size * 1.32 * aw * WIDTH / CARD_W / HEIGHT).clamp(0.02, 0.2);
-                            run("add_title", json!({ "content": text, "start_ms": start, "duration_ms": dur, "font": if *heavy { "heavy" } else { "sans-serif" }, "size_ratio": size_ratio, "align": align, "position": { "x": ax + x / CARD_W * aw, "y": ay + y / canvas_h * ah }, "color": color, "shadow": false, "anim_in": "fade", "anim_out": "fade" }))?;
+                            run("add_title", json!({ "content": text, "start_ms": start, "duration_ms": dur, "font": if *heavy { "heavy" } else { "sans-serif" }, "size_ratio": size_ratio, "align": align, "position": { "x": ax + x / CARD_W * aw, "y": ay + y / canvas_h * ah }, "color": color, "shadow": false, "anim_in": "fade", "anim_out": "fade", "group": group }))?;
                         }
                     }
                 }
@@ -474,7 +474,7 @@ impl Server {
                 }
                 match &cards[i] {
                     None => {}
-                    Some(Ok(els)) => place(&mut run, els, CARD, CARD_H, at + 200.0, len - 260.0, t.card_in)?,
+                    Some(Ok(els)) => place(&mut run, els, CARD, CARD_H, at + 200.0, len - 260.0, t.card_in, &format!("card {}", i + 1))?,
                     Some(Err(svg)) => {
                         let [x, y, w, h] = CARD;
                         run("add_overlay", json!({ "svg": svg, "start_ms": at + 200.0, "duration_ms": len - 260.0, "rect": { "x": x, "y": y, "width": w, "height": h }, "shadow": 0, "anim_in": t.card_in, "anim_out": "fade" })).with_context(|| format!("the card of beat {}", i + 1))?;
@@ -494,7 +494,7 @@ impl Server {
                 if let Some(cta) = line(end, "cta") {
                     // the button: a pill and its words, each on its own
                     let strip = [CARD[0], 0.47, CARD[2], CARD[2] * WIDTH * 130.0 / CARD_W / HEIGHT];
-                    place(&mut run, &t.button_elements(&cta), strip, 130.0, at + 500.0, len - 540.0, "zoom")?;
+                    place(&mut run, &t.button_elements(&cta), strip, 130.0, at + 500.0, len - 540.0, "zoom", "button")?;
                 }
                 if let Some(url) = line(end, "url") {
                     run("add_title", json!({ "content": url, "start_ms": at + 700.0, "duration_ms": len - 740.0, "font": "sans-serif", "size_ratio": 0.024, "align": "center", "position": { "x": centre, "y": 0.58 }, "color": "#c9c6d6", "anim_in": "fade", "anim_out": "none" }))?;
@@ -523,7 +523,7 @@ impl Server {
         let open = self.project(&path)?;
         let out = json!({
             "project": path, "template": t.key, "durationMs": open.session.duration_ms().round(), "segments": segments,
-            "next": "It is an ordinary project now, and every headline and every element of a card is a title or an overlay of its own (get_project lists them): change one with update_clip, remove it with remove_clip. Add music the user likes (get_options favoriteMusic, use_music, volume 0.15–0.25), look at each part with render_frame, open_project to show it in ScreenForge, then export.",
+            "next": "It is an ordinary project now, and every headline and every element of a card is a title or an overlay of its own (get_project lists them, a card's elements sharing a `group`): change one with update_clip, remove it with remove_clip. In the app a group moves as one until the user ungroups it. Add music the user likes (get_options favoriteMusic, use_music, volume 0.15–0.25), look at each part with render_frame, open_project to show it in ScreenForge, then export.",
         });
         Ok(vec![text(out.to_string())])
     }
