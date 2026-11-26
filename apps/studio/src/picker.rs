@@ -1045,8 +1045,9 @@ fn template_card(ui: &mut Ui, t: &sf_services::templates::Template, picture: Opt
         mesh.add_rect_with_uv(thumb, egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         p.add(egui::Shape::mesh(mesh));
         p.rect_stroke(thumb, 8.0, Stroke::new(3.0, theme::p().glass_solid), egui::StrokeKind::Outside);
-        p.text(pos2(rect.left(), thumb.bottom() + 8.0), Align2::LEFT_TOP, t.label, FontId::proportional(13.0), theme::p().text);
-        p.text(pos2(rect.left(), rect.bottom() - 6.0), Align2::LEFT_BOTTOM, "No recording needed", FontId::proportional(11.0), theme::p().text_dim);
+        // the words sit a little in from the picture's edge, with air between the two lines
+        p.text(pos2(rect.left() + 2.0, thumb.bottom() + 9.0), Align2::LEFT_TOP, t.label, FontId::proportional(13.0), theme::p().text);
+        p.text(pos2(rect.left() + 2.0, rect.bottom() - 4.0), Align2::LEFT_BOTTOM, "No recording needed", FontId::proportional(11.0), theme::p().text_dim);
         return resp.on_hover_text(t.about);
     }
     let art = p.with_clip_rect(thumb);
