@@ -983,6 +983,16 @@ fn project_card(ui: &mut Ui, path: &std::path::Path, tex: Option<&egui::TextureH
         {
             let (w, h) = (texture.size()[0] as f32, texture.size()[1] as f32);
             let target = thumb.width() / thumb.height();
+            // a vertical video is shown whole, standing in the middle of the card: filling the
+            // card would show only a band across its middle
+            if w / h < 0.9 {
+                p.rect_filled(thumb, CornerRadius::same(8), theme::p().thumb_empty);
+                let tall = egui::Rect::from_center_size(thumb.center(), vec2(thumb.height() * w / h, thumb.height()));
+                let mut mesh = egui::Mesh::with_texture(texture.id());
+                mesh.add_rect_with_uv(tall, egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                p.add(egui::Shape::mesh(mesh));
+                drawn = true;
+            }
             let uv = if w / h > target {
                 let f = (h * target) / w;
                 egui::Rect::from_min_max(pos2((1.0 - f) / 2.0, 0.0), pos2((1.0 + f) / 2.0, 1.0))
@@ -990,10 +1000,12 @@ fn project_card(ui: &mut Ui, path: &std::path::Path, tex: Option<&egui::TextureH
                 let f = (w / target) / h;
                 egui::Rect::from_min_max(pos2(0.0, (1.0 - f) / 2.0), pos2(1.0, (1.0 + f) / 2.0))
             };
-            let mut mesh = egui::Mesh::with_texture(texture.id());
-            mesh.add_rect_with_uv(thumb, uv, Color32::WHITE);
-            p.add(egui::Shape::mesh(mesh));
-            drawn = true;
+            if !drawn {
+                let mut mesh = egui::Mesh::with_texture(texture.id());
+                mesh.add_rect_with_uv(thumb, uv, Color32::WHITE);
+                p.add(egui::Shape::mesh(mesh));
+                drawn = true;
+            }
         }
     }
     if !drawn {
