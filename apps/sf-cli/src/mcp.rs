@@ -52,6 +52,8 @@ Getting a project: list_projects (recent ones in ~/ScreenForge Projects), start_
 
 The short way: ask_editor does a whole job from a description (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"). ScreenForge's own AI editor looks through the recording, edits, narrates and styles it, and answers with a short report, so the transcript, the activity log and the frames never enter your context. Use it first for anything that would take more than two or three editing calls, check with render_frame, then export. It runs on the user's ScreenForge plan; when that does not include the AI editor the tool says so, and you edit with the tools below, which are free.
 
+A promo or feature video (a short for TikTok, Reels or Shorts, in the style of a motion-graphics explainer) is built from the same pieces, and stays a project the user can open and change in ScreenForge (open_project): output 9:16 (patch_project /config/output/aspectRatio 0.5625); a title card as the hook (add_title_card, two or three big words with the key one starred); the footage with short headlines over it timed to the narration (add_title, 2–4 s each, near the top); narration in short sentences (add_narration) with highlight captions; more shots with join_project and a transition at each cut (set_transition); music kept low (set_music 0.15–0.25); and a closing title card with the call to action and the web address as its subtitle. ask_editor does all of this from one description.
+
 How to edit yourself:
 - Call get_project first, and again after the user may have edited by hand. Tool times are milliseconds on the edited timeline (what plays), not in the raw recording.
 - Find moments with get_transcript (needs transcribe first), get_activity (typing, clicks, idle from the input log), get_motion and view_frames (stills of the raw screen).
@@ -274,6 +276,8 @@ impl Server {
                     "render_frame" => self.render_frame(&path, &args),
                     "export" => self.export(&path, &args, progress),
                     "ask_editor" => self.ask_editor(&path, &args, progress),
+                    "join_project" => self.join(&path, &args),
+                    "open_project" => Ok(vec![text(open_in_app(&path)?)]),
                     _ => self.edit(&path, name, &args),
                 }
             }
@@ -314,6 +318,30 @@ impl Server {
             }
         }
         Ok(content)
+    }
+
+    /// Add another project, or a video file (imported as a project first), to the end of this
+    /// one: a video made of several shots.
+    fn join(&mut self, path: &Path, args: &Value) -> Result<Vec<Value>> {
+        let other = args["other"].as_str().map(str::trim).filter(|o| !o.is_empty()).ok_or_else(|| anyhow!("`other` is required: another .screenforge project, or a video file"))?;
+        stamp(path).ok_or_else(|| anyhow!("no ScreenForge project at {}", path.display()))?;
+        let mut other = expand(other);
+        let mut imported = None;
+        if other.extension().is_none_or(|e| e != sf_project::PACKAGE_EXTENSION) {
+            // a video file: it becomes a project of its own first, which stays in the folder
+            other = record::import_video(&other.to_string_lossy(), None)?;
+            imported = Some(other.clone());
+        }
+        if other == path {
+            return Err(anyhow!("`other` is this project: give another one"));
+        }
+        sf_recording::merge::join_projects(path, &other, |_| {}, &std::sync::atomic::AtomicBool::new(false))?;
+        let open = self.project(path)?; // read again, with the longer recording
+        let mut out = json!({ "ok": true, "durationMs": open.session.duration_ms().round(), "note": "The other project's clips, zooms, titles and captions came along and start where this one ended. get_project shows the clips." });
+        if let Some(p) = imported {
+            out["importedAs"] = json!(p);
+        }
+        Ok(vec![text(out.to_string())])
     }
 
     /// Hand a request in plain words to the app's AI editor and answer with its report: what it
@@ -536,6 +564,23 @@ fn export_allowed() -> Result<bool> {
     }
 }
 
+/// Open the project in the ScreenForge app that ships with this tool, for editing by hand.
+fn open_in_app(project: &Path) -> Result<String> {
+    stamp(project).ok_or_else(|| anyhow!("no ScreenForge project at {}", project.display()))?;
+    let exe = std::env::current_exe()?;
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let dir = exe.parent().ok_or_else(|| anyhow!("cannot find the ScreenForge app next to this tool"))?;
+    // macOS: sf sits in ScreenForge.app/Contents/MacOS, and `open` hands the project to a
+    // running ScreenForge instead of starting a second one
+    if let Some(app) = dir.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")).filter(|_| cfg!(target_os = "macos")) {
+        let ok = std::process::Command::new("open").arg("-a").arg(app).arg(project).status().map(|s| s.success()).unwrap_or(false);
+        return if ok { Ok(format!("Opened {} in ScreenForge. Edits made here show up there, and the user's edits are read before the next tool runs.", project.display())) } else { Err(anyhow!("ScreenForge did not open; the user can open {} from the app", project.display())) };
+    }
+    let app = ["ScreenForge", "screenforge"].iter().map(|n| dir.join(format!("{n}{}", std::env::consts::EXE_SUFFIX))).find(|p| p.is_file()).ok_or_else(|| anyhow!("the ScreenForge app is not next to this tool; the user can open {} from the app", project.display()))?;
+    std::process::Command::new(app).arg(project).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().context("starting ScreenForge")?;
+    Ok(format!("Opened {} in ScreenForge. Edits made here show up there, and the user's edits are read before the next tool runs.", project.display()))
+}
+
 /// The credit lines the project's licences ask for: its Creative Commons music (Jamendo tracks
 /// carry a credit file in the package) and an Unsplash background, as the app's sidebar shows.
 fn credit_lines(project: &Project, package: &Path) -> Vec<String> {
@@ -707,6 +752,16 @@ pub fn tool_list() -> Vec<Value> {
             }
         },
         {
+            "name": "join_project",
+            "description": "Add another project, or a video file, to the end of this project, for a video made of several shots (two recordings, a recording and b-roll, a raw take followed by the polished one). The other project is only read; its clips, zooms, titles and captions come along. A video file is imported as a project of its own first (importedAs in the result). Then edit the whole as one timeline: cut, add title cards between the shots (add_title_card) and transitions at the cuts (set_transition).",
+            "inputSchema": { "type": "object", "properties": { "project": project, "other": { "type": "string", "description": "Path of another .screenforge project, or of a video file (.mp4, .mov …)" } }, "required": ["project", "other"] }
+        },
+        {
+            "name": "open_project",
+            "description": "Open the project in the ScreenForge app so the user can watch it and go on editing by hand. Use it when they ask to see or edit the video in ScreenForge, or after ask_editor so they can adjust the result. Your later edits show up there as you make them.",
+            "inputSchema": { "type": "object", "properties": { "project": project }, "required": ["project"] }
+        },
+        {
             "name": "render_frame",
             "description": "Render the finished video at a timeline time (background, padding, zoom, cursor, captions, titles, camera) and return it as an image. Use it to check how an edit looks.",
             "inputSchema": { "type": "object", "properties": { "project": project, "at_ms": { "type": "number" }, "height": { "type": "integer", "description": "Image height, default 720" } }, "required": ["project", "at_ms"] },
@@ -835,6 +890,12 @@ mod tests {
         assert_eq!(r["result"]["isError"], true);
         assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("`request` is required"));
         assert!(tool_list().iter().any(|t| t["name"] == "ask_editor" && t["inputSchema"]["required"][1] == "request"));
+        // joining and opening need a real project too
+        for (tool, args) in [("join_project", json!({ "project": "/nonexistent.screenforge", "other": "/x.screenforge" })), ("open_project", json!({ "project": "/nonexistent.screenforge" }))] {
+            let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": tool, "arguments": args } })).unwrap();
+            assert_eq!(r["result"]["isError"], true, "{tool}");
+            assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("no ScreenForge project"), "{tool}");
+        }
         let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "cut", "arguments": { "project": "/nonexistent.screenforge", "ranges": [] } } })).unwrap();
         assert_eq!(r["result"]["isError"], true);
     }

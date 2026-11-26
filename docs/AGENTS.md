@@ -64,6 +64,13 @@ The Windows build does not ship the tool yet.
   transcript, the activity log and the frames stay inside ScreenForge, so your agent spends
   far fewer tokens than editing call by call. Later calls continue the same chat. It runs on
   your ScreenForge plan, as the agent panel in the app does; the other tools need no plan.
+- **Several shots, and a promo-style video**: `join_project` adds another project or a video
+  file to the end of the project. With a title card as the hook, short headlines over the
+  footage timed to the narration, highlight captions, transitions, music and a closing card
+  with the call to action, that makes a vertical feature short of the kind a motion-graphics
+  tool produces, and it stays a ScreenForge project you can change by hand.
+- **Open it in the app**: `open_project` opens the project in ScreenForge, where you watch
+  it and keep editing; the agent's later edits show up there.
 - **Check and deliver**: `render_frame` returns the finished look at any time as an image.
   `export` writes the video (mp4, hevc, prores, gif, webm) and a `.details.txt` with the
   title, description and tags the agent passes (a template from the transcript otherwise).
