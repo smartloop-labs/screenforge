@@ -380,7 +380,7 @@ impl Server {
         let tmp = std::env::temp_dir().join(format!("sf-template-{}-{}", std::process::id(), chrono::Local::now().format("%H%M%S%3f")));
         std::fs::create_dir_all(&tmp)?;
         let made = (|| -> Result<PathBuf> {
-            let (png, _, _) = sf_services::svg::render(&t.background_svg(), HEIGHT as u32).map_err(|e| anyhow!(e))?;
+            let (png, _, _) = sf_services::svg::render(&t.backdrop_svg(), HEIGHT as u32).map_err(|e| anyhow!(e))?;
             let still = tmp.join("background.png");
             std::fs::write(&still, png)?;
             let video = tmp.join(format!("{name}.mp4"));
@@ -403,15 +403,19 @@ impl Server {
                 let o = ws.run(name, &a).map_err(|e| anyhow!("{name}: {e}"))?;
                 Ok(serde_json::from_str(&o.result).unwrap_or(Value::Null))
             };
-            // the background fills the frame: no padding, corners, shadow, cursor or phone frame
+            // the recording is not shown (it only gives the piece its length): the picture is the
+            // project's own background, the template's gradient, which fills a frame of any shape
             run("patch_project", json!({ "ops": [
                 { "op": "add", "path": "/name", "value": name },
+                { "op": "add", "path": "/config/output/sfHideRecording", "value": true },
+                { "op": "add", "path": "/config/output/sfTemplate", "value": t.key },
                 { "op": "add", "path": "/config/output/paddingRatio01", "value": 0 },
                 { "op": "add", "path": "/config/styles/screenBorderRadius", "value": 0 },
                 { "op": "add", "path": "/config/styles/shadow/intensity", "value": 0 },
                 { "op": "add", "path": "/config/cursor/hide", "value": true },
                 { "op": "add", "path": "/config/device/enableMockup", "value": false },
-                { "op": "add", "path": "/config/styles/background/type", "value": "color" },
+                { "op": "add", "path": "/config/styles/background/type", "value": "gradient" },
+                { "op": "add", "path": "/config/styles/background/gradient", "value": t.gradient() },
                 { "op": "add", "path": "/config/styles/background/color", "value": t.base },
                 { "op": "add", "path": "/config/captions/font", "value": "heavy" },
                 { "op": "add", "path": "/config/captions/sfStyle", "value": "highlight" },

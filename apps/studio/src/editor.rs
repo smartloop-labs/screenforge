@@ -1887,7 +1887,21 @@ impl Editor {
                 for (label, preset) in sf_project::schema::common::AspectRatio::PRESETS {
                     let value = preset.map(|(w, h)| sf_project::schema::common::AspectRatio::ratio(w, h)).unwrap_or(sf_project::schema::common::AspectRatio::AUTO);
                     if crate::widgets::menu_item(ui, aspect == value, *label).clicked() {
-                        self.edit(move |p| p.config.output.aspect_ratio = value);
+                        self.edit(move |p| {
+                            // a project made from a template was arranged for a vertical frame:
+                            // its titles and cards keep that arrangement, centred, in any shape
+                            let vertical = 9.0 / 16.0;
+                            let shape = |a: &sf_project::schema::common::AspectRatio| a.as_f64().unwrap_or(vertical);
+                            let (old, new) = (shape(&p.config.output.aspect_ratio), shape(&value));
+                            if p.config.output.extra.contains_key("sfTemplate") {
+                                sf_engine::tracks::refit_layers(&mut p.scenes[0], vertical, old, new);
+                            }
+                            // TikTok's, Reels' and Shorts' safe area is for a vertical video only
+                            if (new - vertical).abs() > 0.01 {
+                                p.config.output.extra.remove("sfFormat");
+                            }
+                            p.config.output.aspect_ratio = value;
+                        });
                         ui.close();
                     }
                 }

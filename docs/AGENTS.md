@@ -75,6 +75,9 @@ The Windows build does not ship the tool yet.
   checklist, a figure, a quote, a comparison, a price, a mock window) is laid out as separate
   elements, each shape an overlay and each piece of text a title, so every one can be
   selected, moved, retyped or deleted in the app; a card given as SVG is one image.
+  The picture behind is the project's own background (the template's gradient), so it fills a
+  frame of any shape and is changed in the Background panel; in the app, choosing another
+  shape (wide, square) keeps the titles and cards arranged as they were, centred.
   The elements of a card share a group: in the editor, dragging one moves the whole card (on
   the preview and on the timeline) until you choose *Ungroup*; *Group again* puts them back.
   `new_from_template` makes the video from what the agent writes: a hook, up to eight beats

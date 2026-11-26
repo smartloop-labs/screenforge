@@ -1,8 +1,9 @@
-//! Templates: videos made without a recording. A template is a look (a drawn background, a
+//! Templates: videos made without a recording. A template is a look (a gradient background, a
 //! palette, where the headline and the card sit) and a structure (a hook, beats, an end card)
 //! that a person or an agent fills with words, narration and cards. The result is an ordinary
-//! project: the background is its "recording", a still video as long as the piece, so
-//! narration, captions, titles and overlays work as they do over a screen recording.
+//! project: a plain still video as long as the piece is its "recording", which is not shown, so
+//! narration, captions, titles and overlays work as they do over a screen recording, and the
+//! picture behind them is the project's own background.
 //!
 //! A card is not one picture: it is laid out as separate elements ([`Element`]), each shape an
 //! overlay of its own and each piece of text a title, so every one can be selected, moved,
@@ -21,15 +22,6 @@ pub const TEXT: &str = "#ffffff";
 pub const MUTED: &str = "#a9a6b8";
 pub const INK: &str = "#16131c";
 
-/// What is drawn over the background's glows.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Pattern {
-    None,
-    Grid,
-    Dots,
-    Lines,
-}
-
 /// The small label over each beat's headline.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Labels {
@@ -44,10 +36,10 @@ pub struct Template {
     pub key: &'static str,
     pub label: &'static str,
     pub about: &'static str,
-    /// The background's fill and its two soft glows: colour, centre (0–1), radius (0–1 of the height).
+    /// The background: a dark fill between two glows (colour, centre 0–1, reach 0–1), made into
+    /// the project's own gradient background.
     pub base: &'static str,
     pub glows: [(&'static str, f64, f64, f64); 2],
-    pub pattern: Pattern,
     /// The second line of a headline, the captions' spoken word and the button.
     pub accent: &'static str,
     /// The card panel's fill.
@@ -64,20 +56,20 @@ pub struct Template {
 /// the safe area of TikTok, Reels and Shorts and in the proportions of the card canvas.
 pub const CARD: [f64; 4] = [0.075, 0.3, 0.78, 0.3306];
 
-const fn template(key: &'static str, label: &'static str, about: &'static str, base: &'static str, glows: [(&'static str, f64, f64, f64); 2], pattern: Pattern, accent: &'static str, panel: &'static str, labels: Labels, card_in: &'static str) -> Template {
-    Template { key, label, about, base, glows, pattern, accent, panel, headline_y: 0.22, headline_size: 0.046, labels, card_in }
+const fn template(key: &'static str, label: &'static str, about: &'static str, base: &'static str, glows: [(&'static str, f64, f64, f64); 2], accent: &'static str, panel: &'static str, labels: Labels, card_in: &'static str) -> Template {
+    Template { key, label, about, base, glows, accent, panel, headline_y: 0.22, headline_size: 0.046, labels, card_in }
 }
 
 pub const TEMPLATES: [Template; 9] = [
-    template("feature-short", "Feature short", "One product feature in about 20 seconds: a two-line hook, three to five beats (a headline over a card), and an end card with the name, a tagline, a button and the web address. Dark plum with warm glows.", "#14131f", [("#ff7a45", 0.22, 0.30, 0.42), ("#d0367f", 0.88, 0.74, 0.46)], Pattern::Grid, "#ff8a4c", "#1d1c2b", Labels::None, "zoom"),
-    template("how-to-steps", "How-to in steps", "A numbered how-to: a hook that names the result, then one beat per step (STEP 1, STEP 2 … over a headline and a card that shows the step), and an end card. Deep blue with cool glows.", "#0d1524", [("#2f6df0", 0.15, 0.22, 0.44), ("#22c7dd", 0.9, 0.8, 0.4)], Pattern::None, "#5cc8ff", "#152238", Labels::Numbered("STEP"), "rise"),
-    template("announcement", "Announcement", "A launch or one piece of news: a big hook, two or three short statements with a card each, and an end card with the web address. Near-black with an amber glow.", "#150f12", [("#ff5a36", 0.5, 0.18, 0.5), ("#ffb347", 0.5, 0.95, 0.42)], Pattern::None, "#ffb14a", "#221a1c", Labels::None, "fade"),
-    template("top-three", "Top three", "A countdown list: a hook that names the list, then number three, two and one, each a headline over a card, and an end card. Charcoal with gold.", "#101418", [("#f59e0b", 0.2, 0.25, 0.4), ("#ef4444", 0.86, 0.8, 0.42)], Pattern::Dots, "#fbbf24", "#1b2027", Labels::Fixed(&["NUMBER 3", "NUMBER 2", "NUMBER 1"]), "zoom"),
-    template("quick-tip", "Quick tip", "One tip in fifteen seconds: the problem, the fix, and what it gives you. Dark green with fresh glows.", "#0c1a17", [("#10b981", 0.2, 0.2, 0.45), ("#84cc16", 0.86, 0.85, 0.4)], Pattern::Lines, "#34d399", "#132621", Labels::Fixed(&["THE PROBLEM", "THE FIX", "THE RESULT"]), "rise"),
-    template("did-you-know", "Did you know", "A surprising fact: the fact as a big figure, why it is so, and what to do with it. Deep violet with pink.", "#170f24", [("#8b5cf6", 0.25, 0.25, 0.45), ("#ec4899", 0.86, 0.8, 0.42)], Pattern::Dots, "#c4b5fd", "#22183a", Labels::None, "zoom"),
-    template("before-after", "Before and after", "A comparison: how it was, how it is now, and the difference in one figure. Graphite, from red to green.", "#121316", [("#ef4444", 0.12, 0.3, 0.4), ("#22c55e", 0.9, 0.7, 0.42)], Pattern::None, "#4ade80", "#1c1e24", Labels::Fixed(&["BEFORE", "AFTER", "THE DIFFERENCE"]), "fade"),
-    template("testimonial", "Testimonial", "What a customer said: their words as a quote, the result they got as a figure, and an end card. Warm brown with orange.", "#17120e", [("#f97316", 0.2, 0.2, 0.4), ("#eab308", 0.86, 0.85, 0.38)], Pattern::None, "#fdba74", "#241c16", Labels::None, "fade"),
-    template("sale", "Sale", "An offer: the price and what it was, what you get, and when it ends, closing on a button. Dark red with coral.", "#1a0b10", [("#f43f5e", 0.5, 0.2, 0.5), ("#fb923c", 0.5, 0.92, 0.4)], Pattern::Lines, "#ff6b81", "#2a1219", Labels::None, "zoom"),
+    template("feature-short", "Feature short", "One product feature in about 20 seconds: a two-line hook, three to five beats (a headline over a card), and an end card with the name, a tagline, a button and the web address. Dark plum with warm glows.", "#14131f", [("#ff7a45", 0.22, 0.30, 0.42), ("#d0367f", 0.88, 0.74, 0.46)], "#ff8a4c", "#1d1c2b", Labels::None, "zoom"),
+    template("how-to-steps", "How-to in steps", "A numbered how-to: a hook that names the result, then one beat per step (STEP 1, STEP 2 … over a headline and a card that shows the step), and an end card. Deep blue with cool glows.", "#0d1524", [("#2f6df0", 0.15, 0.22, 0.44), ("#22c7dd", 0.9, 0.8, 0.4)], "#5cc8ff", "#152238", Labels::Numbered("STEP"), "rise"),
+    template("announcement", "Announcement", "A launch or one piece of news: a big hook, two or three short statements with a card each, and an end card with the web address. Near-black with an amber glow.", "#150f12", [("#ff5a36", 0.5, 0.18, 0.5), ("#ffb347", 0.5, 0.95, 0.42)], "#ffb14a", "#221a1c", Labels::None, "fade"),
+    template("top-three", "Top three", "A countdown list: a hook that names the list, then number three, two and one, each a headline over a card, and an end card. Charcoal with gold.", "#101418", [("#f59e0b", 0.2, 0.25, 0.4), ("#ef4444", 0.86, 0.8, 0.42)], "#fbbf24", "#1b2027", Labels::Fixed(&["NUMBER 3", "NUMBER 2", "NUMBER 1"]), "zoom"),
+    template("quick-tip", "Quick tip", "One tip in fifteen seconds: the problem, the fix, and what it gives you. Dark green with fresh glows.", "#0c1a17", [("#10b981", 0.2, 0.2, 0.45), ("#84cc16", 0.86, 0.85, 0.4)], "#34d399", "#132621", Labels::Fixed(&["THE PROBLEM", "THE FIX", "THE RESULT"]), "rise"),
+    template("did-you-know", "Did you know", "A surprising fact: the fact as a big figure, why it is so, and what to do with it. Deep violet with pink.", "#170f24", [("#8b5cf6", 0.25, 0.25, 0.45), ("#ec4899", 0.86, 0.8, 0.42)], "#c4b5fd", "#22183a", Labels::None, "zoom"),
+    template("before-after", "Before and after", "A comparison: how it was, how it is now, and the difference in one figure. Graphite, from red to green.", "#121316", [("#ef4444", 0.12, 0.3, 0.4), ("#22c55e", 0.9, 0.7, 0.42)], "#4ade80", "#1c1e24", Labels::Fixed(&["BEFORE", "AFTER", "THE DIFFERENCE"]), "fade"),
+    template("testimonial", "Testimonial", "What a customer said: their words as a quote, the result they got as a figure, and an end card. Warm brown with orange.", "#17120e", [("#f97316", 0.2, 0.2, 0.4), ("#eab308", 0.86, 0.85, 0.38)], "#fdba74", "#241c16", Labels::None, "fade"),
+    template("sale", "Sale", "An offer: the price and what it was, what you get, and when it ends, closing on a button. Dark red with coral.", "#1a0b10", [("#f43f5e", 0.5, 0.2, 0.5), ("#fb923c", 0.5, 0.92, 0.4)], "#ff6b81", "#2a1219", Labels::None, "zoom"),
 ];
 
 pub fn find(key: &str) -> Option<&'static Template> {
@@ -104,55 +96,30 @@ fn words(text: &str, x: f64, y: f64, size: f64, align: &'static str, color: &str
 }
 
 impl Template {
-    /// The background, drawn for the whole frame.
-    pub fn background_svg(&self) -> String {
-        let mut s = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}"><defs>"#);
-        for (i, (color, _, _, _)) in self.glows.iter().enumerate() {
-            s += &format!(r#"<radialGradient id="g{i}"><stop offset="0" stop-color="{color}" stop-opacity="0.42"/><stop offset="1" stop-color="{color}" stop-opacity="0"/></radialGradient>"#);
-        }
-        s += &format!(r#"</defs><rect width="{WIDTH}" height="{HEIGHT}" fill="{}"/>"#, self.base);
-        for (i, (_, x, y, r)) in self.glows.iter().enumerate() {
-            s += &format!(r#"<circle cx="{}" cy="{}" r="{}" fill="url(#g{i})"/>"#, x * WIDTH, y * HEIGHT, r * HEIGHT);
-        }
-        let mut d = String::new();
-        match self.pattern {
-            Pattern::None => {}
-            Pattern::Grid => {
-                let mut x = 90.0;
-                while x < WIDTH {
-                    d += &format!("M{x} 0V{HEIGHT}");
-                    x += 90.0;
-                }
-                let mut y = 90.0;
-                while y < HEIGHT {
-                    d += &format!("M0 {y}H{WIDTH}");
-                    y += 90.0;
-                }
-            }
-            Pattern::Lines => {
-                // diagonals, bottom-left to top-right
-                let mut c = -HEIGHT;
-                while c < WIDTH {
-                    d += &format!("M{c} {HEIGHT}L{} 0", c + HEIGHT);
-                    c += 120.0;
-                }
-            }
-            Pattern::Dots => {
-                let mut y = 60.0;
-                while y < HEIGHT {
-                    let mut x = 60.0;
-                    while x < WIDTH {
-                        s += &format!(r##"<circle cx="{x}" cy="{y}" r="3" fill="#ffffff" fill-opacity="0.07"/>"##);
-                        x += 120.0;
-                    }
-                    y += 120.0;
-                }
-            }
-        }
-        if !d.is_empty() {
-            s += &format!(r##"<path d="{d}" stroke="#ffffff" stroke-opacity="0.045" stroke-width="2" fill="none"/>"##);
-        }
-        s + "</svg>"
+    /// The template's background as a project gradient (`/config/styles/background/gradient`):
+    /// the first glow's colour in the corner it sits in, the dark fill through the middle, the
+    /// second glow's colour in its corner. Being the project's own background, it fills a frame
+    /// of any shape and is changed in the Background panel like any other.
+    pub fn gradient(&self) -> Value {
+        let ((c0, x0, y0, _), (c1, x1, y1, _)) = (self.glows[0], self.glows[1]);
+        let (sx, sy) = (x0.round(), y0.round());
+        // the far corner from the first glow when the second sits on the same side
+        let (ex, ey) = (if (x1.round() - sx).abs() < 0.5 { 1.0 - sx } else { x1.round() }, if (y1.round() - sy).abs() < 0.5 { 1.0 - sy } else { y1.round() });
+        json!({
+            "start": { "x": sx, "y": sy },
+            "end": { "x": ex, "y": ey },
+            "stops": [
+                { "color": mix(self.base, c0, 0.55), "at": 0.0 },
+                { "color": self.base, "at": 0.42 },
+                { "color": self.base, "at": 0.6 },
+                { "color": mix(self.base, c1, 0.5), "at": 1.0 },
+            ],
+        })
+    }
+
+    /// The still picture the project's (hidden) recording is made of: the plain fill.
+    pub fn backdrop_svg(&self) -> String {
+        format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}"><rect width="{WIDTH}" height="{HEIGHT}" fill="{}"/></svg>"#, self.base)
     }
 
     /// The label over beat `index`'s headline (0-based), when the template has one.
@@ -299,6 +266,17 @@ For an illustration none of these fits, give SVG markup instead: <svg xmlns=\"ht
     )
 }
 
+/// `a` with `amount` (0–1) of `b` mixed in, both `#rrggbb`.
+pub fn mix(a: &str, b: &str, amount: f64) -> String {
+    let rgb = |h: &str| {
+        let v = u32::from_str_radix(h.trim_start_matches('#'), 16).unwrap_or(0);
+        [(v >> 16) & 255, (v >> 8) & 255, v & 255]
+    };
+    let (a, b) = (rgb(a), rgb(b));
+    let c: Vec<u32> = (0..3).map(|i| (a[i] as f64 + (b[i] as f64 - a[i] as f64) * amount.clamp(0.0, 1.0)).round() as u32).collect();
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+
 pub fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
@@ -325,9 +303,13 @@ mod tests {
         assert!(x * WIDTH >= 60.0 && (x + cw) * WIDTH <= 940.0 && y * HEIGHT >= 220.0 && (y + ch) * HEIGHT <= 1440.0);
         assert!(((cw * WIDTH / (ch * HEIGHT)) / (CARD_W / CARD_H) - 1.0).abs() < 0.01);
         for t in &TEMPLATES {
-            let (png, w, h) = crate::svg::render(&t.background_svg(), 1920).unwrap_or_else(|e| panic!("{}: {e}", t.key));
+            let (_, w, h) = crate::svg::render(&t.backdrop_svg(), 1920).unwrap_or_else(|e| panic!("{}: {e}", t.key));
             assert_eq!((w, h), (1080, 1920), "{}", t.key);
-            assert!(png.len() > 1000);
+            // the background is a gradient the project can hold: two corners apart, four stops
+            let g = t.gradient();
+            assert!(g["start"] != g["end"], "{}", t.key);
+            assert_eq!(g["stops"].as_array().map(Vec::len), Some(4));
+            assert!(g["stops"][0]["color"].as_str().is_some_and(|c| c.len() == 7 && c != t.base));
             assert!(find(&t.key.to_uppercase()).is_some());
             // the stand-in project: every card is shapes that draw and words inside the canvas
             let sample = t.sample();
@@ -354,6 +336,7 @@ mod tests {
         assert_eq!(TEMPLATES[3].beat_label(5), None);
         assert!(TEMPLATES[0].card_elements(&json!({ "type": "pie" })).is_err());
         assert!(TEMPLATES[0].card_elements(&json!({ "type": "list" })).is_err());
+        assert_eq!(mix("#000000", "#ffffff", 0.5), "#808080");
         assert_eq!(file_stem("  My: demo/video?  "), "My demo video");
         assert_eq!(escape("a<b & \"c\""), "a&lt;b &amp; &quot;c&quot;");
     }
