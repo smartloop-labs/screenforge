@@ -103,8 +103,8 @@ COMMON = [
 ]
 
 # ── index ───────────────────────────────────────────────────────────────────
-INDEX_TITLE = 'ScreenForge — Grabador de pantalla y editor de vídeo con IA'
-INDEX_DESC = 'Graba screencasts y demos, y pide a la IA que los edite: cortes, zooms, subtítulos, música y voz en off. Pruébalo gratis; código abierto, en Mac, Windows y Linux.'
+INDEX_TITLE = 'ScreenForge — Grabador de pantalla y editor de vídeo con agentes de IA'
+INDEX_DESC = 'Grabador de pantalla y editor de vídeo con agentes de IA. Pide a Claude Code, Cursor o al agente integrado que grabe tu pantalla y la edite. Pruébalo gratis.'
 INDEX_JSONLD = '''<script type="application/ld+json">
 {
   "@context": "https://schema.org",

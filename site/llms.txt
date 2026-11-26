@@ -1,6 +1,6 @@
 # ScreenForge
 
-> ScreenForge is a free AI screen recorder with zoom animation and an AI video editor built in, for macOS, Windows and Linux. Record your screen, webcam or (on a Mac) an iPhone or iPad, or drop in any MP4 or MOV, then ask for the edit in plain language: cuts, zooms, speed, captions, music, backgrounds and voice-over. Or fine-tune it by hand on the timeline.
+> ScreenForge is an agentic AI screen recorder and video editor for macOS, Windows and Linux, free to try. Your own AI agent (Claude Code, Cursor, VS Code, Codex or any MCP client) or the agent built into the app records your screen and edits the recording from a plain-language request: cuts, zooms, speed, captions, music, backgrounds and voice-over. It also records a webcam or (on a Mac) an iPhone or iPad, edits any MP4 or MOV, and leaves everything open to fine-tuning by hand on the timeline.
 
 ScreenForge is made for tutorials, product demos, lessons, promos, talking-head videos and async video messages. It is free to try: record, edit and export twice before you pay.
 
