@@ -174,7 +174,8 @@ impl Format {
         let x = match align {
             "left" => x.clamp(l, r - w),
             "right" => x.clamp(l + w, r),
-            _ => (l + r) / 2.0, // centred text sits on the centre of the clear part
+            // centred text keeps its centre when the line fits there, else moves in just enough
+            _ => x.clamp(l + w / 2.0, r - w / 2.0),
         };
         let (lo, hi) = (t + height01 / 2.0, b - height01 / 2.0);
         (x, if lo <= hi { y.clamp(lo, hi) } else { (t + b) / 2.0 })

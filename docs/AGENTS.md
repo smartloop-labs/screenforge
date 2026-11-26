@@ -70,7 +70,11 @@ The Windows build does not ship the tool yet.
   with the call to action, that makes a vertical feature short of the kind a motion-graphics
   tool produces, and it stays a ScreenForge project you can change by hand.
 - **Templates, for a video without a recording**: `list_templates` shows the built-in ones
-  (a feature short, a how-to in steps, an announcement) and how to draw a card;
+  (feature short, how-to in steps, announcement, top three, quick tip, did you know, before
+  and after, testimonial, sale) and how to give a card. A card given as an object (a list, a
+  checklist, a figure, a quote, a comparison, a price, a mock window) is laid out as separate
+  elements, each shape an overlay and each piece of text a title, so every one can be
+  selected, moved, retyped or deleted in the app; a card given as SVG is one image.
   `new_from_template` makes the video from what the agent writes: a hook, up to eight beats
   (a two-line headline, a spoken sentence and a card drawn as SVG) and an end card with a
   button and a web address. Each part lasts as long as its narration, which is read aloud and

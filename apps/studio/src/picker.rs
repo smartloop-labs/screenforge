@@ -705,12 +705,15 @@ impl Picker {
         });
         inner.add_space(6.0);
         if self.show_templates {
-            inner.horizontal(|ui| {
-                for t in &sf_services::templates::TEMPLATES {
-                    if template_card(ui, t).clicked() {
-                        *action = Some(PickerAction::NewFromTemplate(t.key.to_string()));
+            // more templates than fit: trackpad or wheel scrolling, as for the recent projects
+            egui::ScrollArea::horizontal().id_salt("template_cards").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut inner, |ui| {
+                ui.horizontal(|ui| {
+                    for t in &sf_services::templates::TEMPLATES {
+                        if template_card(ui, t).clicked() {
+                            *action = Some(PickerAction::NewFromTemplate(t.key.to_string()));
+                        }
                     }
-                }
+                });
             });
             return;
         }
