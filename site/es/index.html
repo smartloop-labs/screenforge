@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ScreenForge — Grabador de pantalla con IA gratis y animación de zoom</title>
-<meta name="description" content="Grabador de pantalla con IA gratis, con animación de zoom. Graba screencasts y demos, y pide a la IA que los edite: cortes, subtítulos, música y voz en off.">
+<meta name="description" content="Grabador de pantalla con IA gratis, con animación de zoom, que tu agente de IA puede manejar. Pide a Claude Code o Cursor que grabe y edite: cortes, subtítulos, música y voz en off.">
 <link rel="canonical" href="https://screenforge.studio/es/">
 <link rel="alternate" hreflang="en" href="https://screenforge.studio/">
 <link rel="alternate" hreflang="es" href="https://screenforge.studio/es/">
@@ -16,7 +16,7 @@
 <meta property="og:locale" content="es_ES">
 <meta property="og:locale:alternate" content="en_US">
 <meta property="og:title" content="ScreenForge — Grabador de pantalla con IA gratis y animación de zoom">
-<meta property="og:description" content="Grabador de pantalla con IA gratis, con animación de zoom. Graba screencasts y demos, y pide a la IA que los edite: cortes, subtítulos, música y voz en off.">
+<meta property="og:description" content="Grabador de pantalla con IA gratis, con animación de zoom, que tu agente de IA puede manejar. Pide a Claude Code o Cursor que grabe y edite: cortes, subtítulos, música y voz en off.">
 <meta property="og:image" content="https://screenforge.studio/og.png?v=7">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -24,7 +24,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@ScreenForgeHQ">
 <meta name="twitter:title" content="ScreenForge — Grabador de pantalla con IA gratis y animación de zoom">
-<meta name="twitter:description" content="Grabador de pantalla con IA gratis, con animación de zoom. Graba screencasts y demos, y pide a la IA que los edite: cortes, subtítulos, música y voz en off.">
+<meta name="twitter:description" content="Grabador de pantalla con IA gratis, con animación de zoom, que tu agente de IA puede manejar. Pide a Claude Code o Cursor que grabe y edite: cortes, subtítulos, música y voz en off.">
 <meta name="twitter:image" content="https://screenforge.studio/og.png?v=7">
 <meta name="twitter:image:alt" content="Icono y logotipo de ScreenForge: grabaciones de pantalla con acabado profesional">
 <script type="application/ld+json">
@@ -54,13 +54,13 @@
     },
     {
       "@type": "VideoObject",
-      "name": "El agente de IA de ScreenForge edita un screencast a partir de una sola petición",
+      "name": "El agente de IA de ScreenForge edita una grabación a partir de una sola petición",
       "inLanguage": "en",
-      "description": "Con una sola petición, el agente recorta la grabación a menos de un minuto, acelera las esperas, añade música de fondo y una foto de montañas de Unsplash como fondo, y narra el recorrido con una voz de IA y subtítulos.",
-      "thumbnailUrl": "https://screenforge.studio/demo-poster-v7.jpg",
-      "contentUrl": "https://screenforge.studio/demo-v7.mp4",
-      "uploadDate": "2026-10-24",
-      "duration": "PT30S"
+      "description": "Una sola petición escrita en el panel Agente de la app de ScreenForge: el agente corta la espera del principio, acelera la grabación hasta dejarla en menos de 30 segundos, pone un fondo de montañas y añade música de fondo, y cada cambio aparece en la línea de tiempo.",
+      "thumbnailUrl": "https://screenforge.studio/app-demo-poster-v1.jpg",
+      "contentUrl": "https://screenforge.studio/app-demo-v1.mp4",
+      "uploadDate": "2026-11-26",
+      "duration": "PT25S"
     }
   ]
 }
@@ -327,6 +327,18 @@
   }
   .demo img, .demo video { display: block; width: 100%; height: auto; }
   .demo img { width: 100%; aspect-ratio: 1200 / 794; }
+  /* the hero screencast with its one-line credit */
+  .shot { margin: 0; }
+  .shot figcaption { margin: 14px auto 0; max-width: 62ch; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--dim); }
+  .cta .alt { padding: 15px 22px; }
+  #app .demo { margin-top: 44px; }
+  .sec-sub code { font-family: var(--mono); font-size: .9em; color: var(--fg); }
+  /* the agents section: install commands in the wide card, a quiet note under the grid */
+  .ask-demo.cmds .q { overflow-wrap: anywhere; }
+  .ask-demo.cmds .q + .q { margin-top: 8px; }
+  .card p.more { margin-top: 16px; }
+  .card p.more a::after { content: ' →'; }
+  .fine { margin: 26px auto 0; max-width: 62ch; text-align: center; font-size: 13.5px; color: var(--dim); }
 
   /* ── sections ──────────────────────────────────────── */
   section { padding: 84px 0; border-top: 1px solid var(--line); }
@@ -554,6 +566,7 @@ gtag('config', 'G-ZYRJDJ736V');
   <div class="wrap nav-in">
     <a class="brand" href="#"><img src="../icon.png?v=9" alt="" width="24" height="24">ScreenForge</a>
     <div class="nav-links">
+      <a href="#agents">Agentes</a>
       <a href="#features">Funciones</a>
       <a href="#platforms">Plataformas</a>
       <a href="pricing.html">Precios</a>
@@ -573,23 +586,24 @@ gtag('config', 'G-ZYRJDJ736V');
 
 <header class="hero">
   <div class="wrap hero-in">
-    <h1 aria-label="Grabador de pantalla y editor de vídeo con IA. Demos, guías, clases y promos pro, sin esfuerzo. Pídelo. La IA lo edita."><span class="eyebrow">Grabador de pantalla y editor de vídeo con IA</span><span class="rot" aria-hidden="true"><span class="w on"><i class="ic"><svg viewBox="0 0 24 24"><path class="f" d="M8.5 6.5v11l9-5.5z"/></svg></i>Demos</span><span class="w"><i class="ic"><svg viewBox="0 0 24 24"><path d="M3.5 5.5c2.8-1 5.8-.8 8.5 1 2.7-1.8 5.7-2 8.5-1v13c-2.8-1-5.8-.8-8.5 1-2.7-1.8-5.7-2-8.5-1zM12 6.5v13"/></svg></i>Guías</span><span class="w"><i class="ic"><svg viewBox="0 0 24 24"><path d="M2.5 9.5 12 5l9.5 4.5L12 14zM6.5 11.5v4c1.5 1.4 3.5 2 5.5 2s4-.6 5.5-2v-4"/></svg></i>Clases</span><span class="w"><i class="ic"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l7 4.5v-13L7 10zM17.5 9.5a3.5 3.5 0 0 1 0 5"/></svg></i>Promos</span></span> pro, sin esfuerzo.<br>Pídelo. La IA lo edita.</h1>
-    <ul class="asks" aria-label="Cosas que puedes pedir al agente">
-      <li>quita los “eh” y las pausas largas</li>
-      <li>haz zoom en mis clics</li>
-      <li>déjalo en menos de un minuto</li>
-      <li>añade música tranquila y una foto de montañas</li>
+    <h1 aria-label="Grabación y edición de pantalla con agentes. Pide a tu agente una demo, guía, clase o promo. La graba. La edita."><span class="eyebrow">Grabación y edición con agentes</span>Pide a tu agente una <span class="nw"><span class="rot" aria-hidden="true"><span class="w on"><i class="ic"><svg viewBox="0 0 24 24"><path class="f" d="M8.5 6.5v11l9-5.5z"/></svg></i>demo</span><span class="w"><i class="ic"><svg viewBox="0 0 24 24"><path d="M3.5 5.5c2.8-1 5.8-.8 8.5 1 2.7-1.8 5.7-2 8.5-1v13c-2.8-1-5.8-.8-8.5 1-2.7-1.8-5.7-2-8.5-1zM12 6.5v13"/></svg></i>guía</span><span class="w"><i class="ic"><svg viewBox="0 0 24 24"><path d="M2.5 9.5 12 5l9.5 4.5L12 14zM6.5 11.5v4c1.5 1.4 3.5 2 5.5 2s4-.6 5.5-2v-4"/></svg></i>clase</span><span class="w"><i class="ic"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l7 4.5v-13L7 10zM17.5 9.5a3.5 3.5 0 0 1 0 5"/></svg></i>promo</span></span>.</span><br>La graba. La edita.</h1>
+    <ul class="asks" aria-label="Cosas que puedes pedir a tu agente">
+      <li>graba esta ventana mientras arreglo el fallo</li>
+      <li>quita las pausas y haz zoom en lo importante</li>
+      <li>nárralo y añade música tranquila</li>
+      <li>expórtalo y dame el enlace</li>
     </ul>
     <p class="lede">
-      Grabador de pantalla y editor de vídeo con IA en una app. Graba la pantalla de tu <span class="os-name">Mac</span> o abre un vídeo,
-      y pide la edición o afínala a mano.
+      Un grabador de pantalla y editor de vídeo que tu agente de IA puede manejar. Conecta Claude Code, Cursor, Codex o cualquier cliente MCP,
+      o usa el agente integrado en la app, y recibe un vídeo terminado a partir de una sola descripción.
     </p>
     <div class="cta">
       <a class="go os-dl" href="download.html#mac">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v8.3l2.7-2.7 1 1L8 11.8 4.3 8.1l1-1L8 9.8V1.5zM2.5 12h11v1.5h-11z"/></svg>
         <span class="os-label">Descargar para macOS</span>
       </a>
-      <span class="note os-note">Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA · también en <a href="download.html#windows">Windows</a> y <a href="download.html#linux">Linux</a></span>
+      <a class="alt" href="agents.html">Conecta tu agente</a>
+      <span class="note os-note">Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA integrado · también en <a href="download.html#windows">Windows</a> y <a href="download.html#linux">Linux</a></span>
       <div class="proof">
         <span class="gr">Con el apoyo de
           <a class="on-dark" href="https://elevenlabs.io/startup-grants" rel="noopener"><img src="https://eleven-public-cdn.elevenlabs.io/payloadcms/cy7rxce8uki-IIElevenLabsGrants%201.webp" alt="ElevenLabs Grants" width="92"></a>
@@ -598,25 +612,90 @@ gtag('config', 'G-ZYRJDJ736V');
       </div>
     </div>
 
-    <div class="demo">
-      <video src="../demo-v7.mp4" poster="../demo-poster-v7.jpg" autoplay muted loop playsinline preload="metadata" width="1440" height="936" aria-label="El agente de ScreenForge edita una grabación con una sola petición: recorta el vídeo a menos de un minuto, acelera las esperas, añade música de fondo, una foto de montañas de Unsplash como fondo y narración de IA con subtítulos"></video>
-    </div>
-    <div class="panel" aria-hidden="true">
+    <figure class="shot">
+      <div class="demo">
+        <video src="../agent-demo-v1.mp4" poster="../agent-demo-poster-v1.jpg" autoplay muted loop playsinline preload="metadata" width="1440" height="900" aria-label="Una sesión de Claude Code en una terminal: le piden un screencast y el agente graba su propia ventana con ScreenForge mientras rehace esta página; después edita y exporta la grabación"></video>
+      </div>
+      <figcaption>Grabado, editado y exportado por Claude Code con ScreenForge, mientras rehacía esta página. Nadie tocó la línea de tiempo.</figcaption>
+    </figure>
+    <div class="panel">
       <ol class="steps">
-        <li><div><b>Graba</b><span>Tu pantalla, tu cámara o un iPhone. Cuéntalo mientras grabas.</span></div></li>
-        <li><div><b>Edita</b><span>Pide al agente: “quita los eh, haz zoom en mis clics”. O edita a mano.</span></div></li>
-        <li><div><b>Exporta</b><span>MP4 o GIF, hasta 4K, listo para YouTube.</span></div></li>
+        <li><div><b>Conecta</b><span>Un comando añade ScreenForge a Claude Code, Cursor, VS Code o Codex.</span></div></li>
+        <li><div><b>Pide</b><span>“Graba esta ventana mientras explico el arreglo y luego déjalo más ágil.”</span></div></li>
+        <li><div><b>Recibe el vídeo</b><span>Con cortes, zooms, subtítulos y narración, exportado con un enlace para compartir.</span></div></li>
       </ol>
     </div>
   </div>
 </header>
 
+<section id="agents" class="band">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-label">Desde tu agente</div>
+      <h2>Entra una descripción.<br><em>Sale un vídeo terminado.</em></h2>
+      <p class="sec-sub">ScreenForge incluye un servidor MCP, así que el agente con el que ya trabajas puede grabar tu pantalla y editar el resultado. Todo se ejecuta en tu ordenador, y editar con tu propio agente no gasta créditos de IA de ScreenForge.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card wide">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></svg></div>
+        <div class="k">Claude Code · Cursor · VS Code · Codex</div>
+        <h3>Conéctalo en un paso</h3>
+        <p>En Claude Code, añade el marketplace e instala el plugin. Conecta el servidor y enseña a Claude a grabar, editar, revisar su trabajo y exportar. Los demás clientes necesitan una línea de configuración, o un clic en el menú del engranaje de la app.</p>
+        <div class="ask-demo cmds">
+          <div class="q">/plugin marketplace add smartloop-labs/screenforge-plugins</div>
+          <div class="q">/plugin install screenforge@screenforge</div>
+        </div>
+        <p class="more"><a href="agents.html">Configuración para cada cliente</a></p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="12" cy="12" r="3.2"/></svg></div>
+        <div class="k">Graba</div>
+        <h3>“Graba esta ventana”</h3>
+        <p>Una pantalla entera, o una ventana a la que sigue cuando se mueve, con tu micrófono y el audio del sistema si los quieres. Tu agente puede pausar, reanudar y poner marcadores mientras trabajas.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="7" r="2.5"/><circle cx="6.5" cy="17" r="2.5"/><path d="M8.6 8.4 20 16.5M8.6 15.6 20 7.5"/></svg></div>
+        <div class="k">Edita</div>
+        <h3>Todas las herramientas del editor</h3>
+        <p>Cortes, velocidad, zooms, máscaras, títulos, capítulos, música, subtítulos, narración y todos los ajustes de aspecto. Renderiza fotogramas para revisar su trabajo y exporta con título, descripción y enlace para compartir.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c.6 4.2 2.4 6 6.6 6.6C14.4 10.2 12.6 12 12 16.2 11.4 12 9.6 10.2 5.4 9.6 9.6 9 11.4 7.2 12 3z"/><path d="M18.5 15c.3 1.8 1.2 2.7 3 3-1.8.3-2.7 1.2-3 3-.3-1.8-1.2-2.7-3-3 1.8-.3 2.7-1.2 3-3z"/></svg></div>
+        <div class="k">Una llamada</div>
+        <h3>Encarga el trabajo entero</h3>
+        <p>“Un corte vertical de 30 segundos con narración y música.” Con Pro, el editor de ScreenForge revisa la grabación, la corta y te informa, así que tu agente gasta pocos tokens.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></div>
+        <div class="k">Plantillas</div>
+        <h3>¿Nada que grabar? Vídeo igualmente</h3>
+        <p>Explicaciones, tutoriales y anuncios parten de una plantilla. Tu agente escribe el gancho y las partes; ScreenForge las maqueta, las narra y les pone subtítulos.</p>
+      </div>
+    </div>
+    <p class="fine">Hoy el servidor MCP viene en las apps de macOS y Linux. El agente integrado en la app también funciona en Windows.</p>
+  </div>
+</section>
+
+<section id="app">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-label">En la app</div>
+      <h2>O pídelo <em>dentro de la app.</em></h2>
+      <p class="sec-sub">El editor lleva integrado un agente del mismo tipo. Di lo que quieres y mira cómo cambia la línea de tiempo mientras trabaja; después afina lo que quieras a mano. Un <code>⌘Z</code> deshace una respuesta entera.</p>
+    </div>
+    <div class="demo">
+      <video src="../app-demo-v1.mp4" poster="../app-demo-poster-v1.jpg" autoplay muted loop playsinline preload="none" width="1296" height="900" aria-label="El panel Agente de la app de ScreenForge: una sola petición escrita y el agente corta la espera del principio, acelera la grabación hasta dejarla en menos de 30 segundos, pone un fondo de montañas y añade música de fondo; cada cambio aparece en la línea de tiempo"></video>
+    </div>
+  </div>
+</section>
+
 <section id="features" class="band">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-label">Qué hace</div>
+      <div class="sec-label">La app</div>
       <h2>Graba, edita, exporta.<br><em>Una app nativa.</em></h2>
-      <p class="sec-sub">Grabador y editor de línea de tiempo en una sola ventana. Sin Electron ni vista web; el compositor corre en la GPU y la interfaz se dibuja de forma nativa.</p>
+      <p class="sec-sub">Todo lo que maneja tu agente también lo puedes usar a mano: grabador y editor de línea de tiempo en una sola ventana. Sin Electron ni vista web; el compositor corre en la GPU y la interfaz se dibuja de forma nativa.</p>
     </div>
 
     <div class="grid">
@@ -722,7 +801,7 @@ gtag('config', 'G-ZYRJDJ736V');
       </div>
     </div>
     <div class="trust" aria-label="Conviene saber">
-      <span>App nativa, 100% Rust</span><span>Las grabaciones nunca salen de tu ordenador</span><span>Sin analíticas en la app</span><span>Subtítulos y voces en tu dispositivo</span>
+      <span>App nativa, renderizada en la GPU</span><span>Las grabaciones nunca salen de tu ordenador</span><span>Sin analíticas en la app</span><span>Subtítulos y voces en tu dispositivo</span>
     </div>
   </div>
 </section>
@@ -736,6 +815,7 @@ gtag('config', 'G-ZYRJDJ736V');
         <p class="sec-sub">Grabar y editar es gratis, y tus 2 primeras exportaciones también. Después, exportar requiere licencia: Pro añade el agente con 1.000 créditos al mes y exportación ilimitada; Creator es solo exportación, 49 US$ una vez. Las claves de exportación se verifican sin conexión.</p>
         <div class="free">
           <div class="row"><b>Prueba gratis</b><span>Graba, edita y exporta tus 2 primeros vídeos. <i>Paga solo cuando quieras más.</i></span></div>
+          <div class="row"><b>Tu agente</b><span>Graba y edita desde Claude Code, Cursor o cualquier cliente MCP. <i>Sin gastar créditos de ScreenForge.</i></span></div>
           <div class="row"><b>Voces</b><span>Seis voces en tu dispositivo para narrar, y voces de estudio de ElevenLabs leídas en línea. <i>Todas gratis.</i></span></div>
           <div class="row"><b>Sin conexión</b><span>Las claves de exportación se comprueban en tu equipo. <i>El agente de IA funciona con Claude, a través de nuestro servidor.</i></span></div>
           <div class="row"><b>Reembolsos</b><span>En 24 horas. <i>Pro: antes de usar créditos.</i></span></div>
@@ -761,9 +841,10 @@ gtag('config', 'G-ZYRJDJ736V');
 <div class="close">
   <div class="wrap">
     <div class="sec-label">Empieza</div>
-    <h2>Graba tu primer clip en <em>un minuto.</em></h2>
+    <h2>Pide tu primer vídeo <em>hoy.</em></h2>
     <div class="cta">
       <a class="go os-dl" href="download.html#mac"><span class="os-label">Descargar para macOS</span></a>
+      <a class="alt" href="agents.html">Conecta tu agente</a>
     </div>
   </div>
 </div>
@@ -845,8 +926,8 @@ gtag('config', 'G-ZYRJDJ736V');
     document.querySelectorAll('.os-name').forEach(function (n) { n.textContent = name; });
     document.querySelectorAll('.os-note').forEach(function (n) {
       n.innerHTML = os === 'linux'
-        ? 'Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA · también en <a href="download.html#mac">macOS</a> y <a href="download.html#windows">Windows</a>'
-        : 'Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA · también en <a href="download.html#mac">macOS</a> y <a href="download.html#linux">Linux</a>';
+        ? 'Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA integrado · también en <a href="download.html#mac">macOS</a> y <a href="download.html#windows">Windows</a>'
+        : 'Pruébalo gratis · <a href="pricing.html">Pro</a> añade el agente de IA integrado · también en <a href="download.html#mac">macOS</a> y <a href="download.html#linux">Linux</a>';
     });
   })();
 </script>
