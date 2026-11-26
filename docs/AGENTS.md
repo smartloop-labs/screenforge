@@ -69,6 +69,11 @@ The Windows build does not ship the tool yet.
   footage timed to the narration, highlight captions, transitions, music and a closing card
   with the call to action, that makes a vertical feature short of the kind a motion-graphics
   tool produces, and it stays a ScreenForge project you can change by hand.
+- **TikTok, Reels and Shorts**: `set_format` makes the video 1080×1920 and keeps the text
+  inside the platform's safe area, the part of the frame the app's own caption, buttons and
+  tabs leave clear. Captions sit just above the covered bottom, titles are moved in (and
+  made smaller when a line is too long), and titles added later stay inside too. `export`
+  then writes 1080×1920 by default.
 - **Open it in the app**: `open_project` opens the project in ScreenForge, where you watch
   it and keep editing; the agent's later edits show up there.
 - **Check and deliver**: `render_frame` returns the finished look at any time as an image.

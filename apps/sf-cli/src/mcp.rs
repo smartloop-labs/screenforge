@@ -52,7 +52,7 @@ Getting a project: list_projects (recent ones in ~/ScreenForge Projects), start_
 
 The short way: ask_editor does a whole job from a description (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"). ScreenForge's own AI editor looks through the recording, edits, narrates and styles it, and answers with a short report, so the transcript, the activity log and the frames never enter your context. Use it first for anything that would take more than two or three editing calls, check with render_frame, then export. It runs on the user's ScreenForge plan; when that does not include the AI editor the tool says so, and you edit with the tools below, which are free.
 
-A promo or feature video (a short for TikTok, Reels or Shorts, in the style of a motion-graphics explainer) is built from the same pieces, and stays a project the user can open and change in ScreenForge (open_project): output 9:16 (patch_project /config/output/aspectRatio 0.5625); a title card as the hook (add_title_card, two or three big words with the key one starred); the footage with short headlines over it timed to the narration (add_title, 2–4 s each, near the top); narration in short sentences (add_narration) with highlight captions; more shots with join_project and a transition at each cut (set_transition); music kept low (set_music 0.15–0.25); and a closing title card with the call to action and the web address as its subtitle. ask_editor does all of this from one description.
+A promo or feature video (a short for TikTok, Reels or Shorts, in the style of a motion-graphics explainer) is built from the same pieces, and stays a project the user can open and change in ScreenForge (open_project): set_format with the platform (tiktok, reels or shorts: it sets 1080×1920 and keeps titles and captions inside the safe area the app leaves clear, so no text sits under its buttons or caption); a title card as the hook (add_title_card, two or three big words with the key one starred); the footage with short headlines over it timed to the narration (add_title, 2–4 s each, near the top); narration in short sentences (add_narration) with highlight captions; more shots with join_project and a transition at each cut (set_transition); music kept low (set_music 0.15–0.25); and a closing title card with the call to action and the web address as its subtitle. ask_editor does all of this from one description.
 
 How to edit yourself:
 - Call get_project first, and again after the user may have edited by hand. Tool times are milliseconds on the edited timeline (what plays), not in the raw recording.
@@ -472,7 +472,8 @@ impl Server {
         let opts = sf_export::ExportOptions {
             output,
             fps: args["fps"].as_f64().unwrap_or(60.0).clamp(10.0, 120.0),
-            max_height: args["height"].as_u64().unwrap_or(1080).clamp(144, 4320) as u32,
+            // a vertical video (TikTok, Reels, Shorts) is 1080×1920; everything else 1080 high
+            max_height: args["height"].as_u64().unwrap_or(if open.session.output_size(1920).width <= 1080 { 1920 } else { 1080 }).clamp(144, 4320) as u32,
             codec,
             quality: args["quality"].as_f64().unwrap_or(0.85).clamp(0.1, 1.0),
             include_audio: !args["no_audio"].as_bool().unwrap_or(false),
@@ -776,7 +777,7 @@ pub fn tool_list() -> Vec<Value> {
                     "project": project,
                     "out": { "type": "string", "description": "Output file path" },
                     "format": { "type": "string", "enum": ["mp4", "hevc", "prores", "gif", "webm"], "description": "Default mp4 (H.264)" },
-                    "height": { "type": "integer", "description": "Default 1080" },
+                    "height": { "type": "integer", "description": "Default 1080, or 1920 for a vertical video (1080×1920, what TikTok, Reels and Shorts want)" },
                     "fps": { "type": "number", "description": "Default 60" },
                     "quality": { "type": "number", "description": "0.1–1, default 0.85" },
                     "no_audio": { "type": "boolean" },

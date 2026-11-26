@@ -83,7 +83,10 @@ the plan does not include it, tell the user and edit with the tools below, which
 - `export` returns `credits` when the video uses Creative Commons music or an Unsplash photo
   (it also writes them under the description). Give the user those lines as they are for the
   caption or description wherever they publish; do not write credits of your own.
-- A promo or feature short (TikTok, Reels, Shorts): 9:16, a title card as the hook, short
+- For TikTok, Reels or Shorts call `set_format` with the platform before placing any text:
+  it sets 1080×1920 and keeps captions and titles inside the safe area the app leaves clear.
+  Place titles within the `titleY` range it returns.
+- A promo or feature short (TikTok, Reels, Shorts): `set_format`, a title card as the hook, short
   headlines over the footage timed to the narration, highlight captions, more shots with
   `join_project` and a transition at each cut, music kept low, a closing title card with the
   call to action. `ask_editor` builds all of it from one description.
