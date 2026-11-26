@@ -17,6 +17,10 @@ If the screenforge tools are missing or fail to start, ScreenForge is not instal
 older than 0.1.66: point the user to https://screenforge.studio (or
 `brew install zot24/tap/screenforge`) and ask them to restart the agent.
 
+`ask_editor`, `set_format`, `join_project`, `open_project` and the templates (`list_templates`,
+`new_from_template`) come with ScreenForge 0.1.69. If they are missing, the user's ScreenForge
+is older: tell them to update, and edit with the other tools meanwhile.
+
 ## 1. Get a project
 
 - An existing one: `list_projects` (newest first), or the path the user gives.
