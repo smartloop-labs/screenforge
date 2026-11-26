@@ -33,7 +33,24 @@ older than 0.1.66: point the user to https://screenforge.studio (or
   4. `stop_recording` makes the project and returns its path. Automatic zooms around the
      clicks are added unless `auto_zooms` is false.
 
+Nothing to record (an explainer, a feature video, an announcement, a how-to)? Call
+`list_templates`, then `new_from_template` with a hook, the beats (a two-line headline, one
+spoken sentence, and a card you draw as SVG following the guide `list_templates` returns) and
+an end card. It returns an ordinary project: add music, check each part with `render_frame`,
+then continue with step 3.
+
 ## 2. Edit
+
+**The short way: `ask_editor`.** When the user describes the video they want ("a 30 s vertical
+TikTok of this with narration by Eric, a mountain photo behind and music from my favourites"),
+pass the whole description as `request`. ScreenForge's own AI editor looks through the
+recording, cuts, zooms, narrates and styles it, and answers with a short report, so the
+transcript and the frames never enter your context. Put every wish of the user in the request
+(length, format such as 9:16, voice, background, music): the editor cannot ask back. Call it
+again for changes; the chat continues. It runs on the user's ScreenForge plan: if the tool says
+the plan does not include it, tell the user and edit with the tools below, which are free.
+
+**By hand**, for a small change or without the plan:
 
 - Start with `get_project`. Read again whenever the user may have edited in the app.
 - Times are milliseconds on the edited timeline. Find moments with:
@@ -69,5 +86,17 @@ older than 0.1.66: point the user to https://screenforge.studio (or
   when the tool says they are used, pass on how to get Pro or Creator instead of retrying. Write its
   `title`, `description` (a few sentences on what the video shows) and `tags` yourself and pass
   them to `export`: ScreenForge runs no model here, so without them the file is only a template.
+- `export` returns `credits` when the video uses Creative Commons music or an Unsplash photo
+  (it also writes them under the description). Give the user those lines as they are for the
+  caption or description wherever they publish; do not write credits of your own.
+- For TikTok, Reels or Shorts call `set_format` with the platform before placing any text:
+  it sets 1080×1920 and keeps captions and titles inside the safe area the app leaves clear.
+  Place titles within the `titleY` range it returns.
+- A promo or feature short (TikTok, Reels, Shorts): `set_format`, a title card as the hook, short
+  headlines over the footage timed to the narration, highlight captions, more shots with
+  `join_project` and a transition at each cut, music kept low, a closing title card with the
+  call to action. `ask_editor` builds all of it from one description.
+- `open_project` opens the project in the ScreenForge app when the user wants to watch it or
+  go on editing by hand.
 - Report what changed with times as m:ss. `undo_answers` reverts your edits if the user does
   not like them.

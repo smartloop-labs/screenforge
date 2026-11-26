@@ -9,4 +9,5 @@ pub mod music;
 pub mod my_voice;
 pub mod narration;
 pub mod share;
+pub mod svg;
 pub mod unsplash;

@@ -1,9 +1,12 @@
 //! `sf mcp`: a Model Context Protocol server on stdin/stdout, so the user's own agent (Claude
-//! Code, Codex, Cursor …) can record and edit ScreenForge projects. No AI runs here and no
-//! tokens are spent by ScreenForge: the editing tools are the same ones the app's assistant
-//! uses (`sf_agent::tools`), plus recording, importing, rendering a frame and exporting.
-//! Everything is free except `export`, which has the app's pay gate ([`export_allowed`]): the
-//! computer's free exports, then a license. An export is uploaded and answered with its link.
+//! Code, Codex, Cursor …) can record and edit ScreenForge projects. The editing tools are the
+//! same ones the app's assistant uses (`sf_agent::tools`), plus recording, importing, rendering
+//! a frame and exporting: no AI runs for them and ScreenForge spends no tokens. `ask_editor`
+//! is the exception: it hands a whole job, described in plain words, to the app's own AI editor
+//! (`sf_agent::run_turn`), so the exploring stays here and the calling agent only reads a short
+//! report. That one runs on the user's plan, as the agent panel does. Of the rest everything is
+//! free except `export`, which has the app's pay gate ([`export_allowed`]): the computer's free
+//! exports, then a license. An export is uploaded and answered with its link.
 //!
 //! ```text
 //! claude mcp add screenforge -- sf mcp
@@ -31,6 +34,7 @@ use sf_services::host::LocalHost;
 
 use crate::host;
 use crate::record;
+use crate::templates;
 
 /// Protocol versions this server speaks, newest first.
 const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -47,7 +51,13 @@ A project is a .screenforge package (a folder); pass its path as `project` to ev
 
 Getting a project: list_projects (recent ones in ~/ScreenForge Projects), start_recording + stop_recording (records the screen; the user does what they want to show in between), or import_video (an .mp4/.mov file, a .screenstudio project, or a public Loom link).
 
-How to edit:
+The short way: ask_editor does a whole job from a description (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"). ScreenForge's own AI editor looks through the recording, edits, narrates and styles it, and answers with a short report, so the transcript, the activity log and the frames never enter your context. Use it first for anything that would take more than two or three editing calls, check with render_frame, then export. It runs on the user's ScreenForge plan; when that does not include the AI editor the tool says so, and you edit with the tools below, which are free.
+
+A promo or feature video (a short for TikTok, Reels or Shorts, in the style of a motion-graphics explainer) is built from the same pieces, and stays a project the user can open and change in ScreenForge (open_project): set_format with the platform (tiktok, reels or shorts: it sets 1080×1920 and keeps titles and captions inside the safe area the app leaves clear, so no text sits under its buttons or caption); a title card as the hook (add_title_card, two or three big words with the key one starred); the footage with short headlines over it timed to the narration (add_title, 2–4 s each, near the top); narration in short sentences (add_narration) with highlight captions; more shots with join_project and a transition at each cut (set_transition); music kept low (set_music 0.15–0.25); and a closing title card with the call to action and the web address as its subtitle. ask_editor does all of this from one description.
+
+With nothing to record (an explainer, a feature video, an announcement, a how-to): list_templates, then new_from_template. You write the hook, the beats (a headline, a spoken sentence and a card you draw as SVG) and the end card; ScreenForge lays them out in 1080×1920, narrates and captions them, and the result is a project like any other.
+
+How to edit yourself:
 - Call get_project first, and again after the user may have edited by hand. Tool times are milliseconds on the edited timeline (what plays), not in the raw recording.
 - Find moments with get_transcript (needs transcribe first), get_activity (typing, clicks, idle from the input log), get_motion and view_frames (stills of the raw screen).
 - cut takes every range of one edit in a single call (ranges refer to the timeline before the call). Leave about 100 ms around neighbouring words when cutting speech.
@@ -65,7 +75,12 @@ struct Open {
     stamp: Option<SystemTime>,
     /// The project before each edit made through this server, for `undo_answers`.
     earlier: Vec<Project>,
+    /// The chat with the app's AI editor (`ask_editor`), so a follow-up request continues it.
+    chat: sf_agent::Conversation,
 }
+
+/// What the AI editor is told in place of the app's playhead and selection.
+const EDITOR_CONTEXT: &str = "Asked by the user's own agent through ScreenForge's MCP server, not in the app: there is no playhead and nothing is selected. Nobody can answer a question during this turn, so make the sensible choice yourself and say what you chose. The agent that asked exports the video afterwards; do not open the export dialog.";
 
 struct Server {
     gpu: Option<Gpu>,
@@ -201,8 +216,8 @@ impl Server {
             if let Some(o) = &before {
                 host.keep_results(&o.host);
             }
-            let earlier = before.map(|o| o.earlier).unwrap_or_default();
-            self.open.insert(path.to_path_buf(), Open { session, host, stamp: now, earlier });
+            let (earlier, chat) = before.map(|o| (o.earlier, o.chat)).unwrap_or_default();
+            self.open.insert(path.to_path_buf(), Open { session, host, stamp: now, earlier, chat });
         }
         Ok(self.open.get_mut(path).expect("open"))
     }
@@ -249,6 +264,8 @@ impl Server {
                 rec.cancel();
                 Ok(vec![text("Recording deleted.")])
             }
+            "list_templates" => Ok(vec![text(json!({ "templates": templates::TEMPLATES.iter().map(templates::Template::json).collect::<Vec<_>>(), "cardCanvas": { "width": templates::CARD_W, "height": templates::CARD_H }, "cards": templates::card_guide() }).to_string())]),
+            "new_from_template" => self.new_from_template(&args),
             "import_video" => {
                 let src = args["source"].as_str().ok_or_else(|| anyhow!("`source` is required"))?;
                 let src = if sf_recording::loom::is_link(src) { src.to_string() } else { expand(src).to_string_lossy().into_owned() };
@@ -263,6 +280,9 @@ impl Server {
                 match name {
                     "render_frame" => self.render_frame(&path, &args),
                     "export" => self.export(&path, &args, progress),
+                    "ask_editor" => self.ask_editor(&path, &args, progress),
+                    "join_project" => self.join(&path, &args),
+                    "open_project" => Ok(vec![text(open_in_app(&path)?)]),
                     _ => self.edit(&path, name, &args),
                 }
             }
@@ -303,6 +323,229 @@ impl Server {
             }
         }
         Ok(content)
+    }
+
+    /// One editing tool on `path`, answered with the JSON it returns.
+    fn run(&mut self, path: &Path, name: &str, args: Value) -> Result<Value> {
+        let content = self.edit(path, name, &args).with_context(|| name.to_string())?;
+        let said = content.first().and_then(|c| c["text"].as_str()).unwrap_or_default();
+        Ok(said.split_once('\n').and_then(|(_, j)| serde_json::from_str(j).ok()).unwrap_or(Value::Null))
+    }
+
+    /// A video without a recording, from a template: the template's background becomes the
+    /// project's "recording" (a still video), and the hook, the beats and the end card are laid
+    /// over it with the ordinary tools, each as long as its narration.
+    fn new_from_template(&mut self, args: &Value) -> Result<Vec<Value>> {
+        let t = templates::find(args["template"].as_str().unwrap_or_default()).ok_or_else(|| anyhow!("unknown template: list_templates shows the ones there are"))?;
+        let beats = args["beats"].as_array().cloned().unwrap_or_default();
+        if beats.is_empty() || beats.len() > 8 {
+            return Err(anyhow!("`beats` takes 1 to 8 beats, each {{ line1, line2, narration, card }}"));
+        }
+        let line = |v: &Value, k: &str| v[k].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        for (i, b) in beats.iter().enumerate() {
+            if line(b, "line1").is_none() {
+                return Err(anyhow!("beat {} has no line1 (its headline)", i + 1));
+            }
+        }
+        let name = templates::file_stem(args["name"].as_str().unwrap_or(t.label));
+        // the background as a still video, long enough for any piece; the rest is cut at the end
+        const SECONDS: f64 = 180.0;
+        let tmp = std::env::temp_dir().join(format!("sf-template-{}-{}", std::process::id(), chrono::Local::now().format("%H%M%S%3f")));
+        std::fs::create_dir_all(&tmp)?;
+        let made = (|| -> Result<PathBuf> {
+            let (png, _, _) = sf_services::svg::render(&t.background_svg(), templates::HEIGHT as u32).map_err(|e| anyhow!(e))?;
+            let still = tmp.join("background.png");
+            std::fs::write(&still, png)?;
+            let video = tmp.join(format!("{name}.mp4"));
+            let ok = sf_media::ffmpeg::ffmpeg_cmd()?.arg("-y").args(["-loop", "1", "-framerate", "30", "-i"]).arg(&still).args(["-t", &SECONDS.to_string(), "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "30"]).arg(&video).status()?.success();
+            if !ok {
+                return Err(anyhow!("could not make the template's background video"));
+            }
+            record::import_video(&video.to_string_lossy(), args["folder"].as_str().map(expand).as_deref())
+        })();
+        let _ = std::fs::remove_dir_all(&tmp);
+        let path = made?;
+        let platform = args["platform"].as_str().unwrap_or("tiktok");
+        // the background fills the frame: no padding, corners, shadow, cursor or phone frame
+        self.run(&path, "patch_project", json!({ "ops": [
+            { "op": "add", "path": "/name", "value": name },
+            { "op": "add", "path": "/config/output/paddingRatio01", "value": 0 },
+            { "op": "add", "path": "/config/styles/screenBorderRadius", "value": 0 },
+            { "op": "add", "path": "/config/styles/shadow/intensity", "value": 0 },
+            { "op": "add", "path": "/config/cursor/hide", "value": true },
+            { "op": "add", "path": "/config/device/enableMockup", "value": false },
+            { "op": "add", "path": "/config/styles/background/type", "value": "color" },
+            { "op": "add", "path": "/config/styles/background/color", "value": t.base },
+            { "op": "add", "path": "/config/captions/font", "value": "heavy" },
+            { "op": "add", "path": "/config/captions/sfStyle", "value": "highlight" },
+            { "op": "add", "path": "/config/captions/sfHighlightColor", "value": t.accent },
+            { "op": "add", "path": "/config/captions/enableTranscript", "value": true },
+        ] }))?;
+        self.run(&path, "set_format", json!({ "platform": platform }))?;
+        let voice = line(args, "voice");
+        let mut at = 0.0;
+        let mut segments = vec![];
+        // narration first, since it says how long the segment is; then what shows during it
+        let speak = |server: &mut Server, said: Option<String>, at: f64, least: f64| -> Result<f64> {
+            let Some(said) = said else { return Ok(least) };
+            let mut a = json!({ "text": said, "start_ms": at + 150.0 });
+            if let Some(v) = &voice {
+                a["voice"] = json!(v);
+            }
+            let end = server.run(&path, "add_narration", a)?["endMs"].as_f64().unwrap_or(at + least);
+            Ok((end - at + 450.0).max(least))
+        };
+        let headline = |v: &Value| match (line(v, "line1"), line(v, "line2")) {
+            (Some(a), Some(b)) => format!("{a}\n*{b}*"),
+            (Some(a), None) => a,
+            _ => String::new(),
+        };
+        let centre = (0.056 + 0.87) / 2.0;
+        if line(&args["hook"], "line1").is_some() {
+            let hook = &args["hook"];
+            let len = speak(self, line(hook, "narration"), at, 2200.0)?;
+            self.run(&path, "add_title", json!({ "content": headline(hook), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": 0.07, "align": "center", "position": { "x": centre, "y": 0.4 }, "accent_color": t.accent, "anim_in": "rise", "anim_out": "blur" }))?;
+            segments.push(json!({ "part": "hook", "startMs": at.round(), "endMs": (at + len).round() }));
+            at += len;
+        }
+        for (i, beat) in beats.iter().enumerate() {
+            let len = speak(self, line(beat, "narration"), at, 2600.0)?;
+            self.run(&path, "add_title", json!({ "content": headline(beat), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": t.headline_size, "align": "center", "position": { "x": centre, "y": t.headline_y }, "accent_color": t.accent, "anim_in": "words", "anim_out": "blur" }))?;
+            if t.steps {
+                self.run(&path, "add_title", json!({ "content": format!("*STEP {}*", i + 1), "start_ms": at, "duration_ms": len - 80.0, "font": "heavy", "size_ratio": 0.021, "align": "center", "position": { "x": centre, "y": 0.142 }, "accent_color": t.accent, "anim_in": "fade", "anim_out": "fade" }))?;
+            }
+            if let Some(svg) = line(beat, "card") {
+                let [x, y, w, h] = t.card;
+                self.run(&path, "add_overlay", json!({ "svg": svg, "start_ms": at + 200.0, "duration_ms": len - 260.0, "rect": { "x": x, "y": y, "width": w, "height": h }, "shadow": 0, "anim_in": t.card_in, "anim_out": "fade" })).with_context(|| format!("the card of beat {}", i + 1))?;
+            }
+            segments.push(json!({ "part": format!("beat {}", i + 1), "startMs": at.round(), "endMs": (at + len).round() }));
+            at += len;
+        }
+        if line(&args["end"], "title").is_some() {
+            let end = &args["end"];
+            let len = speak(self, line(end, "narration"), at, 3200.0)?;
+            let mut title = json!({ "content": line(end, "title"), "start_ms": at, "duration_ms": len - 40.0, "font": "heavy", "size_ratio": 0.062, "align": "center", "position": { "x": centre, "y": 0.36 }, "accent_color": t.accent, "anim_in": "rise", "anim_out": "none" });
+            if let Some(tagline) = line(end, "tagline") {
+                title["subtitle"] = json!(tagline);
+            }
+            self.run(&path, "add_title", title)?;
+            if let Some(cta) = line(end, "cta") {
+                self.run(&path, "add_overlay", json!({ "svg": t.button_svg(&cta), "start_ms": at + 500.0, "duration_ms": len - 540.0, "rect": { "x": 0.075, "y": 0.47, "width": 0.78, "height": 0.066 }, "shadow": 0, "anim_in": "zoom", "anim_out": "none" }))?;
+            }
+            if let Some(url) = line(end, "url") {
+                self.run(&path, "add_title", json!({ "content": url, "start_ms": at + 700.0, "duration_ms": len - 740.0, "font": "sans-serif", "size_ratio": 0.024, "align": "center", "position": { "x": centre, "y": 0.58 }, "color": "#c9c6d6", "anim_in": "fade", "anim_out": "none" }))?;
+            }
+            segments.push(json!({ "part": "end card", "startMs": at.round(), "endMs": (at + len).round() }));
+            at += len;
+        }
+        // the unused rest of the background
+        self.run(&path, "cut", json!({ "ranges": [{ "start_ms": at, "end_ms": SECONDS * 1000.0 }] }))?;
+        let open = self.project(&path)?;
+        let out = json!({
+            "project": path, "template": t.key, "durationMs": open.session.duration_ms().round(), "segments": segments,
+            "next": "It is an ordinary project now. Add music the user likes (get_options favoriteMusic, use_music, volume 0.15–0.25), look at each part with render_frame, change any title, card or narration with the editing tools, open_project to show it in ScreenForge, then export.",
+        });
+        Ok(vec![text(out.to_string())])
+    }
+
+    /// Add another project, or a video file (imported as a project first), to the end of this
+    /// one: a video made of several shots.
+    fn join(&mut self, path: &Path, args: &Value) -> Result<Vec<Value>> {
+        let other = args["other"].as_str().map(str::trim).filter(|o| !o.is_empty()).ok_or_else(|| anyhow!("`other` is required: another .screenforge project, or a video file"))?;
+        stamp(path).ok_or_else(|| anyhow!("no ScreenForge project at {}", path.display()))?;
+        let mut other = expand(other);
+        let mut imported = None;
+        if other.extension().is_none_or(|e| e != sf_project::PACKAGE_EXTENSION) {
+            // a video file: it becomes a project of its own first, which stays in the folder
+            other = record::import_video(&other.to_string_lossy(), None)?;
+            imported = Some(other.clone());
+        }
+        if other == path {
+            return Err(anyhow!("`other` is this project: give another one"));
+        }
+        sf_recording::merge::join_projects(path, &other, |_| {}, &std::sync::atomic::AtomicBool::new(false))?;
+        let open = self.project(path)?; // read again, with the longer recording
+        let mut out = json!({ "ok": true, "durationMs": open.session.duration_ms().round(), "note": "The other project's clips, zooms, titles and captions came along and start where this one ended. get_project shows the clips." });
+        if let Some(p) = imported {
+            out["importedAs"] = json!(p);
+        }
+        Ok(vec![text(out.to_string())])
+    }
+
+    /// Hand a request in plain words to the app's AI editor and answer with its report: what it
+    /// said, the steps it took and the new length. The project is saved after each turn. When
+    /// the editor asks for a transcript, the recording is transcribed here and the editor is
+    /// asked once more to carry on, since nobody else would ask it again.
+    fn ask_editor(&mut self, path: &Path, args: &Value, progress: &Value) -> Result<Vec<Value>> {
+        let request = args["request"].as_str().map(str::trim).filter(|r| !r.is_empty()).ok_or_else(|| anyhow!("`request` is required: what the video should become, in plain words"))?.to_string();
+        let device = sf_license::device_id().ok_or_else(|| anyhow!("ScreenForge cannot identify this computer, so its AI editor is not available. Edit with the other tools."))?;
+        let route = sf_agent::Route { url: format!("{}/functions/v1/agent", sf_license::SUPABASE_URL), anon_key: sf_license::SUPABASE_ANON_KEY.into(), device };
+        // the model chosen in the app's agent panel
+        let settings = sf_license::key_file().map(|p| sf_agent::Settings::load(&p.with_file_name("agent.json"))).unwrap_or_default();
+        if args["new_chat"].as_bool().unwrap_or(false) {
+            self.project(path)?.chat = sf_agent::Conversation::default();
+        }
+        let (mut said, mut steps, mut failed): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
+        let (mut stopped, mut credits, mut changed) = (None, Value::Null, false);
+        let mut ask = request.clone();
+        for round in 0..2 {
+            let open = self.project(path)?;
+            let mut ws = host::workspace(&open.session, open.host.clone());
+            ws.earlier = open.earlier.clone();
+            let before = ws.project.clone();
+            let (mut edited, mut transcript) = (false, None);
+            let chat = sf_agent::run_turn(&route, &settings, std::mem::take(&mut open.chat), &mut ws, &ask, EDITOR_CONTEXT, &std::sync::atomic::AtomicBool::new(false), |e| match e {
+                sf_agent::Event::Text(t) => said.push(t),
+                sf_agent::Event::Step { summary, failed: true } => failed.push(summary),
+                sf_agent::Event::Step { summary, .. } => {
+                    if !progress.is_null() {
+                        send(&json!({ "jsonrpc": "2.0", "method": "notifications/progress", "params": { "progressToken": progress, "progress": steps.len() + 1, "message": summary } }));
+                    }
+                    steps.push(summary);
+                }
+                sf_agent::Event::Changed(_) => edited = true,
+                sf_agent::Event::Action(sf_agent::Action::Transcribe { language }) => transcript = Some(language),
+                sf_agent::Event::Credits(c) => credits = c,
+                sf_agent::Event::Error(e) => stopped = Some(e),
+                _ => {}
+            });
+            open.chat = chat;
+            if edited {
+                if ws.earlier.len() < open.earlier.len() {
+                    open.earlier = ws.earlier.clone(); // the editor undid earlier answers
+                } else {
+                    open.earlier.push(before);
+                }
+                open.session.pkg.project = ws.project.clone();
+                open.session.pkg.save()?;
+                open.session.rebuild();
+                open.stamp = None; // narration, photos and music are new files: read again
+                changed = true;
+            }
+            let Some(language) = transcript.filter(|_| round == 0 && stopped.is_none()) else { break };
+            let n = transcribe(path, language)?;
+            self.open.get_mut(path).expect("open").stamp = None;
+            steps.push(format!("Transcribed on this computer: {n} words"));
+            ask = format!("The recording is transcribed now ({n} words; get_transcript has them). Carry on with the request: {request}");
+        }
+        if let (Some(e), false, true) = (&stopped, changed, steps.is_empty()) {
+            // refused before anything ran (the plan does not include the editor, no connection …)
+            return Err(anyhow!("ScreenForge's AI editor did not run: {e} Edit with the other tools instead; they need no plan."));
+        }
+        let open = self.project(path)?;
+        let mut out = json!({ "answer": said.last().cloned().unwrap_or_default(), "steps": steps, "changed": changed, "durationMs": open.session.duration_ms().round() });
+        if !failed.is_empty() {
+            out["failedSteps"] = json!(failed);
+        }
+        if let Some(e) = stopped {
+            out["stopped"] = json!(e);
+        }
+        if let Some(left) = credits["credits"].as_f64() {
+            // only the balance: the account and the price list are the app's business
+            out["aiCreditsLeft"] = json!(left.floor());
+        }
+        out["next"] = json!("Check the look with render_frame, ask again here for changes (the chat continues), then export.");
+        Ok(vec![text(out.to_string())])
     }
 
     /// The finished look at an output time, as a JPEG.
@@ -357,7 +600,8 @@ impl Server {
         let opts = sf_export::ExportOptions {
             output,
             fps: args["fps"].as_f64().unwrap_or(60.0).clamp(10.0, 120.0),
-            max_height: args["height"].as_u64().unwrap_or(1080).clamp(144, 4320) as u32,
+            // a vertical video (TikTok, Reels, Shorts) is 1080×1920; everything else 1080 high
+            max_height: args["height"].as_u64().unwrap_or(if open.session.output_size(1920).width <= 1080 { 1920 } else { 1080 }).clamp(144, 4320) as u32,
             codec,
             quality: args["quality"].as_f64().unwrap_or(0.85).clamp(0.1, 1.0),
             include_audio: !args["no_audio"].as_bool().unwrap_or(false),
@@ -371,10 +615,17 @@ impl Server {
             }
         })?;
         let input = sf_export::details_input(&open.session, opts.range_ms);
-        let details = written_details(args, &input);
+        let mut details = written_details(args, &input);
+        // who the licences ask to be credited: under the description, and in the answer
+        let credits = credit_lines(&open.session.pkg.project, path);
+        details.description = with_credits(&details.description, &credits);
         let dtxt = sf_export::details_txt_path(&result);
         std::fs::write(&dtxt, details.to_text())?;
         let mut out = json!({ "file": result, "file_url": file_url(&result), "seconds": started.elapsed().as_secs(), "details": dtxt });
+        if !credits.is_empty() {
+            out["credits"] = json!(credits);
+            out["credits_note"] = json!("The music and photo licences ask for these lines wherever the video is published: give them to the user and put them in the caption or description as they are.");
+        }
         if free {
             // counted once the file is written (kept on this computer until the server hears)
             match sf_license::record_free_export() {
@@ -440,6 +691,63 @@ fn export_allowed() -> Result<bool> {
         )),
         Err(e) => Err(anyhow!("Without a license, export needs the license server to count this computer's free exports, and it did not answer: {e}")),
     }
+}
+
+/// Open the project in the ScreenForge app that ships with this tool, for editing by hand.
+fn open_in_app(project: &Path) -> Result<String> {
+    stamp(project).ok_or_else(|| anyhow!("no ScreenForge project at {}", project.display()))?;
+    let exe = std::env::current_exe()?;
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let dir = exe.parent().ok_or_else(|| anyhow!("cannot find the ScreenForge app next to this tool"))?;
+    // macOS: sf sits in ScreenForge.app/Contents/MacOS, and `open` hands the project to a
+    // running ScreenForge instead of starting a second one
+    if let Some(app) = dir.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")).filter(|_| cfg!(target_os = "macos")) {
+        let ok = std::process::Command::new("open").arg("-a").arg(app).arg(project).status().map(|s| s.success()).unwrap_or(false);
+        return if ok { Ok(format!("Opened {} in ScreenForge. Edits made here show up there, and the user's edits are read before the next tool runs.", project.display())) } else { Err(anyhow!("ScreenForge did not open; the user can open {} from the app", project.display())) };
+    }
+    let app = ["ScreenForge", "screenforge"].iter().map(|n| dir.join(format!("{n}{}", std::env::consts::EXE_SUFFIX))).find(|p| p.is_file()).ok_or_else(|| anyhow!("the ScreenForge app is not next to this tool; the user can open {} from the app", project.display()))?;
+    std::process::Command::new(app).arg(project).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().context("starting ScreenForge")?;
+    Ok(format!("Opened {} in ScreenForge. Edits made here show up there, and the user's edits are read before the next tool runs.", project.display()))
+}
+
+/// The credit lines the project's licences ask for: its Creative Commons music (Jamendo tracks
+/// carry a credit file in the package) and an Unsplash background, as the app's sidebar shows.
+fn credit_lines(project: &Project, package: &Path) -> Vec<String> {
+    let p = serde_json::to_value(project).unwrap_or(Value::Null);
+    let assets = package.join("assets");
+    let mut files: Vec<String> = vec![];
+    if !p["config"]["audio"]["muteBackgroundAudio"].as_bool().unwrap_or(false) {
+        files.extend(p["config"]["audio"]["backgroundAudioFileName"].as_str().map(str::to_string));
+    }
+    // music parts that play their own track
+    for clip in p["scenes"][0]["sfMusicClips"].as_array().into_iter().flatten() {
+        files.extend(clip["track"].as_str().or(clip["fileName"].as_str()).map(str::to_string));
+    }
+    let mut lines: Vec<String> = vec![];
+    for f in files {
+        if let Some(c) = sf_services::music::credit(&assets, &f).map(|c| c.text()) {
+            if !lines.contains(&c) {
+                lines.push(c);
+            }
+        }
+    }
+    let bg = &p["config"]["styles"]["background"];
+    if bg["type"] == "unsplash" && bg["unsplash"].is_object() {
+        lines.push(sf_services::unsplash::credit(&bg["unsplash"]));
+    }
+    lines
+}
+
+/// `description` with the credits under it, leaving out one the writer already gave (told by
+/// its opening, `Music: "Title" by Artist` or `Photo by Name`, since links may differ).
+fn with_credits(description: &str, credits: &[String]) -> String {
+    let mut out = description.trim_end().to_string();
+    let missing: Vec<&String> = credits.iter().filter(|c| !description.contains(c.split(" (").next().unwrap_or(c))).collect();
+    for (i, c) in missing.iter().enumerate() {
+        out += if i == 0 && !out.is_empty() { "\n\n" } else if out.is_empty() { "" } else { "\n" };
+        out += c;
+    }
+    out
 }
 
 /// `path` as a file:// link.
@@ -560,6 +868,61 @@ pub fn tool_list() -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": { "source": { "type": "string", "description": "File path or loom.com/share link" }, "folder": folder }, "required": ["source"] }
         },
         {
+            "name": "ask_editor",
+            "description": "Hand a whole job to ScreenForge's own AI editor in plain words and get a short report back. It looks through the recording itself (transcript, typing and clicks, motion, frames), then cuts, speeds up, zooms, writes and reads the narration, picks the background and music, sets the aspect ratio, captions and titles. Use it first for anything that would take more than two or three editing calls (\"make this a 30 s vertical TikTok with narration by Eric, a mountain photo behind and music from my favourites\"): the exploring and the frames stay inside ScreenForge and not in your context, so it costs you far fewer tokens than editing call by call. Put everything the user asked for in `request` (length, format such as 9:16 for TikTok, voice, background, music, tone, what must stay in): the editor cannot ask back. Later calls continue the same chat (\"make the zooms gentler\"); new_chat: true starts over. It runs on the user's ScreenForge plan (the AI agent that comes with Pro, or the trial allowance): when the plan does not include it the tool says so, and you edit with the other tools, which stay free. It does not export: check with render_frame, then call export. Takes a minute or more.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": project,
+                    "request": { "type": "string", "description": "What the video should become, in plain words, with every wish of the user in it" },
+                    "new_chat": { "type": "boolean", "description": "Forget the earlier requests to the editor for this project (default false)" }
+                },
+                "required": ["project", "request"]
+            }
+        },
+        {
+            "name": "join_project",
+            "description": "Add another project, or a video file, to the end of this project, for a video made of several shots (two recordings, a recording and b-roll, a raw take followed by the polished one). The other project is only read; its clips, zooms, titles and captions come along. A video file is imported as a project of its own first (importedAs in the result). Then edit the whole as one timeline: cut, add title cards between the shots (add_title_card) and transitions at the cuts (set_transition).",
+            "inputSchema": { "type": "object", "properties": { "project": project, "other": { "type": "string", "description": "Path of another .screenforge project, or of a video file (.mp4, .mov …)" } }, "required": ["project", "other"] }
+        },
+        {
+            "name": "open_project",
+            "description": "Open the project in the ScreenForge app so the user can watch it and go on editing by hand. Use it when they ask to see or edit the video in ScreenForge, or after ask_editor so they can adjust the result. Your later edits show up there as you make them.",
+            "inputSchema": { "type": "object", "properties": { "project": project }, "required": ["project"] }
+        },
+        {
+            "name": "list_templates",
+            "description": "The templates for a video made without a recording (a feature short, a how-to in steps, an announcement): each one's look and what to write for it, its colours, and how to draw the cards. Read it before new_from_template.",
+            "inputSchema": { "type": "object", "properties": {} },
+            "annotations": { "readOnlyHint": true }
+        },
+        {
+            "name": "new_from_template",
+            "description": format!("Make a video from a template, without any recording: a motion-graphics short built from what you write. Give the hook, the beats and the end card; each part lasts as long as its narration, which is read aloud and captioned. A beat is a two-line headline (line2 is drawn in the accent colour) over a card you draw. {} The result is an ordinary project in 1080×1920 with titles and captions inside the platform's safe area: change anything afterwards with the editing tools, and the user can open it in ScreenForge. Returns the project path and each part's times. Use it when the user asks for an explainer, a feature video, an announcement or a how-to and there is nothing to record, or names a template.", templates::card_guide()),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "template": { "type": "string", "enum": templates::TEMPLATES.iter().map(|t| t.key).collect::<Vec<_>>() },
+                    "name": { "type": "string", "description": "Project name" },
+                    "platform": { "type": "string", "enum": ["tiktok", "reels", "shorts"], "description": "Default tiktok" },
+                    "voice": { "type": "string", "description": "Narrator, when the user names one (el_eric, am_fenrir …, as add_narration); left out, the one chosen in the Narration panel" },
+                    "hook": { "type": "object", "description": "The opening: two or three big words per line", "properties": { "line1": { "type": "string" }, "line2": { "type": "string" }, "narration": { "type": "string" } } },
+                    "beats": {
+                        "type": "array", "minItems": 1, "maxItems": 8,
+                        "items": { "type": "object", "properties": {
+                            "line1": { "type": "string", "description": "Headline, first line: two to four words" },
+                            "line2": { "type": "string", "description": "Second line, in the accent colour" },
+                            "narration": { "type": "string", "description": "One spoken sentence for this beat" },
+                            "card": { "type": "string", "description": "The beat's card as SVG markup" }
+                        }, "required": ["line1"] }
+                    },
+                    "end": { "type": "object", "description": "The closing card", "properties": { "title": { "type": "string", "description": "The product or brand name" }, "tagline": { "type": "string" }, "cta": { "type": "string", "description": "The button's words, e.g. Download free today" }, "url": { "type": "string" }, "narration": { "type": "string" } } },
+                    "folder": folder
+                },
+                "required": ["template", "beats"]
+            }
+        },
+        {
             "name": "render_frame",
             "description": "Render the finished video at a timeline time (background, padding, zoom, cursor, captions, titles, camera) and return it as an image. Use it to check how an edit looks.",
             "inputSchema": { "type": "object", "properties": { "project": project, "at_ms": { "type": "number" }, "height": { "type": "integer", "description": "Image height, default 720" } }, "required": ["project", "at_ms"] },
@@ -567,14 +930,14 @@ pub fn tool_list() -> Vec<Value> {
         },
         {
             "name": "export",
-            "description": "Export the edited video to a file (default: next to the project, named after it), upload it and return its link: `link` is the page anyone can watch (screenforge.studio/s/…, the same link every time the project is exported), `file` and `file_url` the file on this computer. Give the user the link. Takes about as long as the video for 1080p60, plus the upload. Export is the one paid step: without a license a computer has a few free exports (free_exports_left in the result), then the tool answers with how to get Pro or Creator. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here.",
+            "description": "Export the edited video to a file (default: next to the project, named after it), upload it and return its link: `link` is the page anyone can watch (screenforge.studio/s/…, the same link every time the project is exported), `file` and `file_url` the file on this computer. Give the user the link. Takes about as long as the video for 1080p60, plus the upload. Export is the one paid step: without a license a computer has a few free exports (free_exports_left in the result), then the tool answers with how to get Pro or Creator. Also writes <name>.details.txt with a title, description and tags: write those yourself from what the video shows and pass them, since ScreenForge runs no AI model here. Leave music and photo credits out of your description: ScreenForge adds the lines the licences ask for (Creative Commons music, Unsplash photos) under it and returns them as `credits`; give those to the user as they are for the caption wherever the video is published.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "project": project,
                     "out": { "type": "string", "description": "Output file path" },
                     "format": { "type": "string", "enum": ["mp4", "hevc", "prores", "gif", "webm"], "description": "Default mp4 (H.264)" },
-                    "height": { "type": "integer", "description": "Default 1080" },
+                    "height": { "type": "integer", "description": "Default 1080, or 1920 for a vertical video (1080×1920, what TikTok, Reels and Shorts want)" },
                     "fps": { "type": "number", "description": "Default 60" },
                     "quality": { "type": "number", "description": "0.1–1, default 0.85" },
                     "no_audio": { "type": "boolean" },
@@ -638,6 +1001,18 @@ mod tests {
     }
 
     #[test]
+    fn credits_go_under_the_description_once() {
+        let credits = vec!["Music: \"Born Free\" by Pokki DJ (https://www.jamendo.com/track/1179546), licensed under CC BY 3.0".to_string(), "Photo by Ann (https://unsplash.com/@ann) on Unsplash (https://unsplash.com/photos/abc)".to_string()];
+        assert_eq!(with_credits("A demo.", &credits), format!("A demo.\n\n{}\n{}", credits[0], credits[1]));
+        assert_eq!(with_credits("", &credits[..1]), credits[0]);
+        // a credit the writer gave already (other link) is not repeated
+        assert_eq!(with_credits("A demo.\nPhoto by Ann on Unsplash", &credits), format!("A demo.\nPhoto by Ann on Unsplash\n\n{}", credits[0]));
+        assert_eq!(with_credits("A demo.", &[]), "A demo.");
+        // no music and a plain background: nothing to credit
+        assert!(credit_lines(&Project::new("T"), Path::new("/nonexistent.screenforge")).is_empty());
+    }
+
+    #[test]
     fn file_links_escape_what_a_url_cannot_hold() {
         assert_eq!(file_url(Path::new("/home/me/ScreenForge Projects/My demo.mp4")), "file:///home/me/ScreenForge%20Projects/My%20demo.mp4");
         assert_eq!(file_url(Path::new("C:\\Users\\me\\a.mp4")), "file:///C:/Users/me/a.mp4");
@@ -671,6 +1046,17 @@ mod tests {
         assert!(s.handle(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none());
         let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "nope" })).unwrap();
         assert_eq!(r["error"]["code"], -32601);
+        // the AI editor needs a request and a project before anything is sent anywhere
+        let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "ask_editor", "arguments": { "project": "/nonexistent.screenforge", "request": " " } } })).unwrap();
+        assert_eq!(r["result"]["isError"], true);
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("`request` is required"));
+        assert!(tool_list().iter().any(|t| t["name"] == "ask_editor" && t["inputSchema"]["required"][1] == "request"));
+        // joining and opening need a real project too
+        for (tool, args) in [("join_project", json!({ "project": "/nonexistent.screenforge", "other": "/x.screenforge" })), ("open_project", json!({ "project": "/nonexistent.screenforge" }))] {
+            let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": tool, "arguments": args } })).unwrap();
+            assert_eq!(r["result"]["isError"], true, "{tool}");
+            assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("no ScreenForge project"), "{tool}");
+        }
         let r = s.handle(&json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "cut", "arguments": { "project": "/nonexistent.screenforge", "ranges": [] } } })).unwrap();
         assert_eq!(r["result"]["isError"], true);
     }

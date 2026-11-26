@@ -57,9 +57,39 @@ The Windows build does not ship the tool yet.
   `split`, zooms, masks, camera layouts, audio, on-device narration, titles and overlays,
   transitions, chapters, presets and every sidebar setting through `patch_project`.
   `transcribe` runs Whisper on this computer and returns when it is done.
+- **Describe the video and let ScreenForge make it**: `ask_editor` hands a whole job to
+  ScreenForge's own AI editor in plain words ("a 30 s vertical TikTok of this, narrated by
+  Eric, a mountain photo behind, music from my favourites"). The editor looks through the
+  recording, cuts, zooms, narrates and styles it, and answers with a short report. The
+  transcript, the activity log and the frames stay inside ScreenForge, so your agent spends
+  far fewer tokens than editing call by call. Later calls continue the same chat. It runs on
+  your ScreenForge plan, as the agent panel in the app does; the other tools need no plan.
+- **Several shots, and a promo-style video**: `join_project` adds another project or a video
+  file to the end of the project. With a title card as the hook, short headlines over the
+  footage timed to the narration, highlight captions, transitions, music and a closing card
+  with the call to action, that makes a vertical feature short of the kind a motion-graphics
+  tool produces, and it stays a ScreenForge project you can change by hand.
+- **Templates, for a video without a recording**: `list_templates` shows the built-in ones
+  (a feature short, a how-to in steps, an announcement) and how to draw a card;
+  `new_from_template` makes the video from what the agent writes: a hook, up to eight beats
+  (a two-line headline, a spoken sentence and a card drawn as SVG) and an end card with a
+  button and a web address. Each part lasts as long as its narration, which is read aloud and
+  captioned. The result is an ordinary 1080×1920 project: every title, card and narration
+  take can be changed afterwards, by the agent or by hand in ScreenForge.
+- **Artwork the agent draws**: `add_overlay` takes `svg` in place of a file, so an agent can
+  put an illustration, a diagram or a card over any video.
+- **TikTok, Reels and Shorts**: `set_format` makes the video 1080×1920 and keeps the text
+  inside the platform's safe area, the part of the frame the app's own caption, buttons and
+  tabs leave clear. Captions sit just above the covered bottom, titles are moved in (and
+  made smaller when a line is too long), and titles added later stay inside too. `export`
+  then writes 1080×1920 by default.
+- **Open it in the app**: `open_project` opens the project in ScreenForge, where you watch
+  it and keep editing; the agent's later edits show up there.
 - **Check and deliver**: `render_frame` returns the finished look at any time as an image.
   `export` writes the video (mp4, hevc, prores, gif, webm) and a `.details.txt` with the
   title, description and tags the agent passes (a template from the transcript otherwise).
+  It adds the credit lines that Creative Commons music and Unsplash photos ask for under the
+  description and returns them as `credits`, ready for the caption.
 
 Every editing tool takes `project`, the path of the `.screenforge` package. Tool times are
 milliseconds on the edited timeline. Each edit is saved straight away, with `project.json.bak`
@@ -92,6 +122,12 @@ labels.
 > Record my screen while I demo the signup flow. … OK, stop. Cut the pauses, speed up the
 > typing, zoom in on the buttons I click, add a dark gradient background and captions, and
 > export it for YouTube.
+
+> Make a 20 second feature short about our new export presets from the feature-short
+> template, narrated by Eric, with music from my favourites.
+
+> Make a 25 second TikTok of my last recording: vertical, narrated by Eric, a mountain photo
+> behind it and music from my favourites. Export it and give me the caption with the credits.
 
 ## From the shell
 

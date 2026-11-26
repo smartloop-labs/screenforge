@@ -52,6 +52,11 @@ pub trait Host: Send + Sync {
         let _ = path;
         Err("adding images and videos over the recording is not available here".into())
     }
+    /// Draw artwork written as SVG to an image in the project's media folder, for an overlay.
+    fn import_svg(&self, svg: &str) -> Result<sf_project::tracks::MediaItem, String> {
+        let _ = svg;
+        Err("drawing SVG artwork is not available here".into())
+    }
     /// Read `text` aloud with AI voice `voice` (a [`VOICES`] id, or one of the options'
     /// `cloudVoices`) at `speed`, in `language` (an ISO 639-1 code for ElevenLabs; `None`:
     /// English), saved in the project's voice-over folder with its words for captions.
@@ -113,7 +118,84 @@ Crop: /config/crop/rect01 {x, y, width, height} 0–1 of the recording.
 Device frame (a phone or tablet around the recording; tall recordings stand upright, wide ones lie on their side): /config/device/frameKey = one of options.deviceFrames, or null for none (also set /config/device/enableMockup true).
 Per clip (index from get_project): /scenes/0/slices/<i>/hideCursor, disableSmoothMouseMovement, volume. Transitions between clips: set_transition, not by hand.
 Titles and overlay images or videos: add_title, add_overlay, update_clip, remove_clip, not by hand.
+A video for TikTok, Instagram Reels or YouTube Shorts: set_format (not by hand). It makes the video 1080×1920 and keeps titles and captions out of the parts the app covers (options.formats lists each one's safeArea01).
 Project name: /name.";
+
+/// A place vertical video is published, and how much of a 1080×1920 frame its own interface
+/// covers (the caption and account at the bottom, the buttons on the right, the tabs on top).
+/// None of the three publishes exact figures for ordinary posts: these are the cautious ones
+/// from their ad guidelines and from widely used safe-zone templates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Format {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub top: f64,
+    pub bottom: f64,
+    pub left: f64,
+    pub right: f64,
+}
+
+impl Format {
+    pub const WIDTH: f64 = 1080.0;
+    pub const HEIGHT: f64 = 1920.0;
+    /// Where the project keeps its format: `/config/output/sfFormat`.
+    pub const KEY: &'static str = "sfFormat";
+
+    pub fn find(key: &str) -> Option<&'static Format> {
+        let key = key.trim().to_lowercase();
+        FORMATS.iter().find(|f| f.key == key)
+    }
+
+    /// The format a project was set to with `set_format`.
+    pub fn of(project: &sf_project::Project) -> Option<&'static Format> {
+        project.config.output.extra.get(Self::KEY).and_then(Value::as_str).and_then(Self::find)
+    }
+
+    /// The clear part of the frame as fractions: left, top, right and bottom edges.
+    pub fn safe01(&self) -> (f64, f64, f64, f64) {
+        (self.left / Self::WIDTH, self.top / Self::HEIGHT, 1.0 - self.right / Self::WIDTH, 1.0 - self.bottom / Self::HEIGHT)
+    }
+
+    /// Room left at the sides of the clear part, as a fraction of the width.
+    pub const PAD: f64 = 0.02;
+
+    /// The widest a line of text may be, as a fraction of the frame's width.
+    pub fn text_width01(&self) -> f64 {
+        let (l, _, r, _) = self.safe01();
+        r - l - 2.0 * Self::PAD
+    }
+
+    /// Where a title's anchor may be so text `width01` wide and `height01` tall stays in the
+    /// clear part: x is its left edge, centre or right edge by `align`, y its vertical centre.
+    pub fn place(&self, align: &str, x: f64, y: f64, width01: f64, height01: f64) -> (f64, f64) {
+        let (l, t, r, b) = self.safe01();
+        let (l, r) = (l + Self::PAD, r - Self::PAD);
+        let w = width01.min(r - l);
+        let x = match align {
+            "left" => x.clamp(l, r - w),
+            "right" => x.clamp(l + w, r),
+            _ => (l + r) / 2.0, // centred text sits on the centre of the clear part
+        };
+        let (lo, hi) = (t + height01 / 2.0, b - height01 / 2.0);
+        (x, if lo <= hi { y.clamp(lo, hi) } else { (t + b) / 2.0 })
+    }
+
+    pub fn json(&self) -> Value {
+        let (l, t, r, b) = self.safe01();
+        let r3 = |v: f64| (v * 1000.0).round() / 1000.0;
+        json!({
+            "format": self.key, "label": self.label, "width": Self::WIDTH, "height": Self::HEIGHT, "aspectRatio": 0.5625,
+            "coveredPx": { "top": self.top, "bottom": self.bottom, "left": self.left, "right": self.right },
+            "safeArea01": { "left": r3(l), "top": r3(t), "right": r3(r), "bottom": r3(b) },
+        })
+    }
+}
+
+pub const FORMATS: [Format; 3] = [
+    Format { key: "tiktok", label: "TikTok", top: 220.0, bottom: 480.0, left: 60.0, right: 140.0 },
+    Format { key: "reels", label: "Instagram Reels", top: 270.0, bottom: 670.0, left: 65.0, right: 120.0 },
+    Format { key: "shorts", label: "YouTube Shorts", top: 288.0, bottom: 672.0, left: 48.0, right: 192.0 },
+];
 
 /// `get_options`: the host's catalogs plus what every project offers.
 pub fn options(host: Option<&dyn Host>) -> Value {
@@ -123,6 +205,7 @@ pub fn options(host: Option<&dyn Host>) -> Value {
         m.insert("settings".into(), Value::from(SETTINGS));
         let frames: Vec<String> = sf_engine::device::KINDS.iter().flat_map(|k| sf_engine::device::FINISHES.iter().map(move |f| sf_engine::device::Frame { kind: k.0, finish: f.0 }.key())).collect();
         m.insert("deviceFrames".into(), json!(frames));
+        m.insert("formats".into(), json!(FORMATS.iter().map(Format::json).collect::<Vec<_>>()));
     }
     v
 }

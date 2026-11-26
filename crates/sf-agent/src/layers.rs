@@ -55,6 +55,7 @@ pub fn definitions() -> Vec<Value> {
     merge(&mut add_title, &title_props);
     let mut add_overlay = json!({
         "path": { "type": "string", "description": "An image (png, jpg, webp …) or video (mp4, mov, webm) file the user named" },
+        "svg": { "type": "string", "description": "In place of path: artwork written as SVG markup (<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 860 736\">…</svg>), drawn to an image" },
         "start_ms": { "type": "number" },
         "duration_ms": { "type": "number", "description": "Default 4000, or the video's length" },
         "shadow": { "type": "number", "description": "Drop shadow, 0–1" },
@@ -82,8 +83,8 @@ pub fn definitions() -> Vec<Value> {
         }),
         json!({
             "name": "add_overlay",
-            "description": "Show an image or video file over the recording for a while (a product card, a screenshot, b-roll): centred by default, full frame, picture-in-picture in a corner, or a custom rect. Videos play silently. backdrop_blur and backdrop_dim put the recording behind out of focus so the overlay stands out.",
-            "input_schema": { "type": "object", "properties": add_overlay, "required": ["path", "start_ms"] }
+            "description": "Show an image or video file over the recording for a while (a product card, a screenshot, b-roll), or artwork you draw yourself as SVG (`svg` in place of `path`: an illustration, an icon, a diagram, a mock panel, a list card; transparent where nothing is drawn; give it a viewBox, text in font-family Inter or Montserrat at 34 px or more for a 860 px wide card, a few words only). Centred by default, full frame, picture-in-picture in a corner, or a custom rect (draw the SVG in the rect's proportions). Videos play silently. backdrop_blur and backdrop_dim put the recording behind out of focus so the overlay stands out.",
+            "input_schema": { "type": "object", "properties": add_overlay, "required": ["start_ms"] }
         }),
         json!({
             "name": "update_clip",
@@ -114,6 +115,11 @@ pub fn definitions() -> Vec<Value> {
             "name": "remove_title_card",
             "description": "Delete the title card at clip `index` (from get_project clips with titleCard) and the titles on it.",
             "input_schema": { "type": "object", "properties": { "index": { "type": "integer" } }, "required": ["index"] }
+        }),
+        json!({
+            "name": "set_format",
+            "description": "Make the video for TikTok, Instagram Reels or YouTube Shorts. Sets the recommended size (1080×1920, 9:16), puts the captions just above what the app covers at the bottom, and moves every title into the safe area: the part of the frame the app's own caption, buttons and tabs leave clear. Titles added or moved afterwards are kept inside it too, so no text ends up under the interface. Call it first whenever the user names one of these platforms or asks for a short, vertical or mobile video; the result gives the safe area (safeArea01, fractions of the frame) and the range of y for titles. `none` stops keeping a safe area.",
+            "input_schema": { "type": "object", "properties": { "platform": { "type": "string", "enum": ["tiktok", "reels", "shorts", "none"] } }, "required": ["platform"] }
         }),
         json!({
             "name": "set_transition",
@@ -160,6 +166,28 @@ fn anim(input: &Value, key: &str) -> Result<Option<Option<ClipAnim>>, String> {
 }
 
 /// Text fields of `input` applied to `style`.
+/// The captions' margin in the renderer (`sf_session::captions`), as a fraction of the height.
+const CAPTION_MARGIN01: f64 = 0.045;
+
+/// Move a title into the clear part of the project's format, when it has one. True when it moved.
+fn keep_clear(format: Option<&crate::host::Format>, style: &mut TextStyle) -> bool {
+    let Some(f) = format else { return false };
+    let lines = style.content.lines().count().max(1) as f64 + if style.subtitle.trim().is_empty() { 0.0 } else { 0.7 };
+    // how wide the longest line is drawn, as a fraction of the 9:16 frame's width: a letter
+    // of the title fonts is about half its size wide
+    let letters = style.content.lines().map(|l| l.chars().filter(|c| *c != '*').count()).max().unwrap_or(0) as f64;
+    let width = |size: f64| letters * size * 0.5 * crate::host::Format::HEIGHT / crate::host::Format::WIDTH;
+    let before = (style.position01, style.size_ratio);
+    if width(style.size_ratio) > f.text_width01() {
+        // too long for the clear part: smaller, so no line runs under the app's buttons
+        style.size_ratio = (style.size_ratio * f.text_width01() / width(style.size_ratio)).max(0.02);
+    }
+    let (x, y) = f.place(&style.align, style.position01.x, style.position01.y, width(style.size_ratio), style.size_ratio * 1.25 * lines);
+    let moved = (x - before.0.x).abs() > 1e-6 || (y - before.0.y).abs() > 1e-6 || style.size_ratio != before.1;
+    style.position01 = Point::new(x, y);
+    moved
+}
+
 fn apply_text(style: &mut TextStyle, input: &Value) -> Result<(), String> {
     if let Some(c) = input.get("content").and_then(Value::as_str) {
         if c.trim().is_empty() {
@@ -296,6 +324,39 @@ impl Workspace {
         Ok(Outcome::edit(json!({ "ok": true, "removed_titles": inside }), "Removed a title card"))
     }
 
+    /// Make the video for TikTok, Reels or Shorts: 9:16, captions above what the app covers at
+    /// the bottom, every title inside the clear part. Titles added later are kept there too.
+    fn set_format(&mut self, input: &Value) -> Result<Outcome, String> {
+        use crate::host::Format;
+        let asked = input.get("platform").and_then(Value::as_str).ok_or("`platform` is required: tiktok, reels, shorts or none")?;
+        if asked.trim().eq_ignore_ascii_case("none") {
+            self.project.config.output.extra.remove(Format::KEY);
+            return Ok(Outcome::edit(json!({ "ok": true, "note": "Titles and captions are no longer kept in a safe area. The aspect ratio is unchanged: /config/output/aspectRatio." }), "No platform format"));
+        }
+        let f = Format::find(asked).ok_or_else(|| format!("unknown platform {asked}: tiktok, reels, shorts or none"))?;
+        let (_, top, _, bottom) = f.safe01();
+        self.project.config.output.extra.insert(Format::KEY.into(), json!(f.key));
+        self.project.config.output.aspect_ratio = sf_project::schema::common::AspectRatio::Ratio(0.5625);
+        // captions: their lower edge just above what the app covers. The renderer lays them
+        // out between margins of CAPTION_MARGIN01, top = margin + y × (1 − 2 margin − height).
+        let c = &mut self.project.config.captions;
+        let height = c.size_ratio * 1.7;
+        let y = ((bottom - 0.01 - height - CAPTION_MARGIN01) / (1.0 - 2.0 * CAPTION_MARGIN01 - height)).clamp(0.0, 1.0);
+        c.position01 = Point::new(0.5, (y * 1000.0).round() / 1000.0);
+        let mut moved = 0;
+        let mut t = self.project.scenes[0].tracks();
+        for style in t.iter_mut().flat_map(|t| t.clips.iter_mut()).filter_map(|c| c.text.as_mut()) {
+            moved += keep_clear(Some(f), style) as usize;
+        }
+        self.project.scenes[0].set_tracks(t);
+        let mut out = f.json();
+        out["captionsY"] = json!(self.project.config.captions.position01.y);
+        out["titlesMoved"] = json!(moved);
+        out["titleY"] = json!([((top + 0.04) * 1000.0).round() / 1000.0, ((bottom - 0.04) * 1000.0).round() / 1000.0]);
+        out["note"] = json!(format!("The video is {}×{} now. Export it with height {} for full quality. Titles are kept inside safeArea01 from here on (a position outside it is moved in); the recording itself may run under the covered parts, so keep what must be read near the middle and use a zoom for small text.", Format::WIDTH, Format::HEIGHT, Format::HEIGHT));
+        Ok(Outcome::edit(out, format!("Format: {} (1080×1920, safe area kept)", f.label)))
+    }
+
     pub(crate) fn run_layer(&mut self, name: &str, input: &Value) -> Option<Result<Outcome, String>> {
         Some(match name {
             "add_title" => self.add_title(input),
@@ -313,6 +374,7 @@ impl Workspace {
             "set_transition" => self.set_transition(input),
             "add_title_card" => self.add_title_card(input),
             "remove_title_card" => self.remove_title_card(input),
+            "set_format" => self.set_format(input),
             _ => return None,
         })
     }
@@ -323,6 +385,7 @@ impl Workspace {
         let (start, dur) = Self::clip_span(&tl, num(input, "start_ms")?, opt_num(input, "duration_ms")?.unwrap_or(Clip::TITLE_MS))?;
         let mut clip = Clip::title(start, dur, content);
         apply_text(clip.text.as_mut().expect("title"), input)?;
+        keep_clear(crate::host::Format::of(&self.project), clip.text.as_mut().expect("title"));
         apply_anims(&mut clip, input)?;
         Self::pin(&tl, &mut clip, input.get("pinned").and_then(Value::as_bool).unwrap_or(true));
         let id = clip.id.clone();
@@ -334,10 +397,14 @@ impl Workspace {
     }
 
     fn add_overlay(&mut self, input: &Value) -> Result<Outcome, String> {
-        let path = input.get("path").and_then(Value::as_str).ok_or("`path` is required")?;
         let tl = self.timeline();
         let start = num(input, "start_ms")?;
-        let item = self.host.as_deref().ok_or("not available here (no editor)")?.import_media(path)?;
+        let host = self.host.as_deref().ok_or("not available here (no editor)")?;
+        let item = match (input.get("path").and_then(Value::as_str), input.get("svg").and_then(Value::as_str).filter(|s| !s.trim().is_empty())) {
+            (_, Some(svg)) => host.import_svg(svg)?,
+            (Some(path), None) => host.import_media(path)?,
+            (None, None) => return Err("give `path` (an image or video file) or `svg` (artwork you write)".into()),
+        };
         if item.kind == MediaKind::Audio {
             return Err("that is an audio file: use import_file with use_as music, or add_narration".into());
         }
@@ -359,6 +426,7 @@ impl Workspace {
 
     fn update_clip(&mut self, input: &Value) -> Result<Outcome, String> {
         let id = input.get("id").and_then(Value::as_str).ok_or("`id` is required")?;
+        let format = crate::host::Format::of(&self.project);
         let tl = self.timeline();
         let mut t = self.project.scenes[0].tracks();
         let track = t.iter().position(|tr| tr.clips.iter().any(|c| c.id == id)).ok_or_else(|| format!("no title or overlay {id}"))?;
@@ -379,6 +447,7 @@ impl Workspace {
         }
         if let Some(style) = c.text.as_mut() {
             apply_text(style, input)?;
+            keep_clear(format, style);
         } else {
             apply_overlay(c, input)?;
         }
@@ -657,6 +726,43 @@ mod tests {
         w.run("remove_title_card", &json!({ "index": 0 })).unwrap();
         assert!(!w.project.scenes[0].slices[0].is_card());
         assert!(w.project.scenes[0].tracks().iter().flat_map(|t| &t.clips).all(|c| c.id != title), "its title went with it");
+    }
+
+    #[test]
+    fn a_platform_format_keeps_text_in_its_safe_area() {
+        use crate::host::Format;
+        let mut p = Project::new("T");
+        p.scenes[0].slices = vec![sf_project::v4::Slice::new(0.0, 20_000.0)];
+        let mut w = Workspace::new(p);
+        // a title at the very top, and one at the bottom right, before the format is set
+        w.run("add_title", &json!({ "content": "Hook", "start_ms": 0, "position": { "x": 0.5, "y": 0.02 } })).unwrap();
+        w.run("add_title", &json!({ "content": "Link", "start_ms": 5000, "align": "right", "position": { "x": 1.0, "y": 0.98 } })).unwrap();
+        let out: Value = serde_json::from_str(&w.run("set_format", &json!({ "platform": "TikTok" })).unwrap().result).unwrap();
+        assert_eq!((out["width"].as_f64(), out["height"].as_f64(), out["titlesMoved"].as_u64()), (Some(1080.0), Some(1920.0), Some(2)));
+        assert_eq!(serde_json::to_value(&w.project.config.output).unwrap()["aspectRatio"], 0.5625);
+        let f = Format::of(&w.project).unwrap();
+        let (l, t, r, b) = f.safe01();
+        let inside = |w: &Workspace| w.project.scenes[0].tracks().iter().flat_map(|t| t.clips.clone()).filter_map(|c| c.text).all(|s| s.position01.y > t && s.position01.y < b && s.position01.x >= l && s.position01.x <= r);
+        assert!(inside(&w));
+        // captions end above what the app covers at the bottom
+        let c = &w.project.config.captions;
+        let top = CAPTION_MARGIN01 + c.position01.y * (1.0 - 2.0 * CAPTION_MARGIN01 - c.size_ratio * 1.7);
+        assert!(top + c.size_ratio * 1.7 <= b && top > 0.5);
+        // a title added or moved later cannot leave the safe area either
+        let id = serde_json::from_str::<Value>(&w.run("add_title", &json!({ "content": "Late", "start_ms": 9000, "position": { "x": 0.5, "y": 0.99 } })).unwrap().result).unwrap()["id"].as_str().unwrap().to_string();
+        w.run("update_clip", &json!({ "id": id, "position": { "x": 0.5, "y": 0.0 } })).unwrap();
+        assert!(inside(&w));
+        // without a format a title goes where it is put
+        // a long left-aligned title starting mid-frame is pulled left and made to fit
+        let long = serde_json::from_str::<Value>(&w.run("add_title", &json!({ "content": "My AI agent *filmed itself*", "start_ms": 12000, "align": "left", "size_ratio": 0.045, "position": { "x": 0.5, "y": 0.3 } })).unwrap().result).unwrap()["id"].as_str().unwrap().to_string();
+        let style = w.project.scenes[0].tracks().iter().flat_map(|t| t.clips.clone()).find(|c| c.id == long).and_then(|c| c.text).unwrap();
+        let drawn = 23.0 * style.size_ratio * 0.5 * 1920.0 / 1080.0;
+        assert!(style.size_ratio < 0.045 && style.position01.x + drawn <= r + 1e-9 && style.position01.x >= l);
+        w.run("set_format", &json!({ "platform": "none" })).unwrap();
+        w.run("update_clip", &json!({ "id": id, "position": { "x": 0.5, "y": 0.0 } })).unwrap();
+        assert!(!inside(&w));
+        assert!(w.run("set_format", &json!({ "platform": "vine" })).is_err());
+        assert_eq!(crate::host::options(None)["formats"].as_array().map(Vec::len), Some(3), "get_options lists the formats");
     }
 
 }
