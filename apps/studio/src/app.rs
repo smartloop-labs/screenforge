@@ -612,6 +612,16 @@ fn project_dialog() -> rfd::FileDialog {
 /// Ask for a project. macOS lists projects as packages (files: a folder picker greys them out);
 /// elsewhere they are folders, and one picked inside a project (after opening it in Explorer or
 /// the Linux file chooser) resolves to the project that holds it.
+/// Start a project from template `key` with the `sf` tool that ships with the app; its path.
+fn project_from_template(key: &str) -> Option<PathBuf> {
+    let sf = crate::agents::cli_path()?;
+    let mut cmd = std::process::Command::new(sf);
+    cmd.args(["template", key]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    let out = cmd.output().ok().filter(|o| o.status.success())?;
+    let path = PathBuf::from(String::from_utf8_lossy(&out.stdout).lines().last()?.trim());
+    path.is_dir().then_some(path)
+}
+
 fn pick_project() -> Option<PathBuf> {
     let picked = if cfg!(target_os = "macos") { project_dialog().pick_file() } else { project_dialog().pick_folder() };
     picked.map(project_root)
@@ -1341,6 +1351,25 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("New project".into()));
             }
             Some(PickerAction::OpenProjectDialog) => self.ask(ctx, pick_project, &mut open_request),
+            Some(PickerAction::NewFromTemplate(key)) => {
+                // made by the command line tool next to the app (it draws the background, lays
+                // out the titles and cards); the project opens when it is there
+                if self.picking.is_none() {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let repaint = ctx.clone();
+                    std::thread::Builder::new()
+                        .name("template".into())
+                        .spawn(move || {
+                            let _ = tx.send(project_from_template(&key));
+                            repaint.request_repaint();
+                        })
+                        .expect("spawn template");
+                    self.picking = Some(rx);
+                    if let Screen::Picker(p) = &mut self.screen {
+                        p.set_status("Making the video from the template…");
+                    }
+                }
+            }
             Some(PickerAction::StartRecording(mut req)) => {
                 if let Some(msg) = crate::recorder::check_permissions(&mut req) {
                     self.error = Some(msg);

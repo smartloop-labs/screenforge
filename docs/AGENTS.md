@@ -76,6 +76,9 @@ The Windows build does not ship the tool yet.
   button and a web address. Each part lasts as long as its narration, which is read aloud and
   captioned. The result is an ordinary 1080×1920 project: every title, card and narration
   take can be changed afterwards, by the agent or by hand in ScreenForge.
+  In the app the same templates are under *Templates* in the recent-projects panel: choosing
+  one makes the project with stand-in titles and cards to change by hand. From the shell:
+  `sf template feature-short` (add `--spec file.json` for your own words and cards).
 - **Artwork the agent draws**: `add_overlay` takes `svg` in place of a file, so an agent can
   put an illustration, a diagram or a card over any video.
 - **TikTok, Reels and Shorts**: `set_format` makes the video 1080×1920 and keeps the text

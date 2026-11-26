@@ -13,6 +13,8 @@ pub const HEIGHT: f64 = 1920.0;
 /// The canvas an agent draws a card on: the card area's proportions.
 pub const CARD_W: f64 = 860.0;
 pub const CARD_H: f64 = 648.0;
+/// The colour of main text in every template.
+pub const TEXT: &str = "#ffffff";
 
 pub struct Template {
     pub key: &'static str,
@@ -148,6 +150,47 @@ Use the template's colours (list_templates gives them): white for main text, the
     )
 }
 
+impl Template {
+    /// A card with stand-in content, for a project started from the template by hand: `kind`
+    /// 0 a list of three rows, 1 a big figure over a bar, 2 a window with blocks.
+    pub fn placeholder_card(&self, kind: usize) -> String {
+        let (w, h) = (CARD_W, CARD_H);
+        let mut s = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}"><rect x="20" y="20" width="{}" height="{}" rx="36" fill="{}" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/><text x="70" y="100" font-family="Inter" font-size="34" fill="#a9a6b8">Your card</text>"##, w - 40.0, h - 40.0, self.panel);
+        match kind % 3 {
+            0 => {
+                for (i, row) in ["First point", "Second point", "Third point"].iter().enumerate() {
+                    let y = 140.0 + i as f64 * 150.0;
+                    s += &format!(r##"<rect x="60" y="{y}" width="740" height="120" rx="26" fill="#ffffff" fill-opacity="0.05"/><circle cx="125" cy="{}" r="34" fill="{}"/><text x="125" y="{}" text-anchor="middle" font-family="Montserrat" font-weight="800" font-size="34" fill="#16131c">{}</text><text x="185" y="{}" font-family="Montserrat" font-weight="800" font-size="40" fill="#ffffff">{row}</text>"##, y + 60.0, self.accent, y + 72.0, i + 1, y + 75.0);
+                }
+            }
+            1 => {
+                s += &format!(r##"<text x="430" y="330" text-anchor="middle" font-family="Montserrat" font-weight="800" font-size="180" fill="#ffffff">10×</text><rect x="130" y="440" width="600" height="28" rx="14" fill="#ffffff" fill-opacity="0.08"/><rect x="130" y="440" width="420" height="28" rx="14" fill="{}"/><text x="430" y="540" text-anchor="middle" font-family="Inter" font-size="36" fill="#a9a6b8">A number worth showing</text>"##, self.accent);
+            }
+            _ => {
+                s += &format!(r##"<rect x="60" y="140" width="740" height="430" rx="26" fill="#ffffff" fill-opacity="0.05"/><circle cx="100" cy="180" r="10" fill="{a}"/><circle cx="132" cy="180" r="10" fill="#ffffff" fill-opacity="0.2"/><circle cx="164" cy="180" r="10" fill="#ffffff" fill-opacity="0.2"/><rect x="90" y="220" width="220" height="320" rx="16" fill="#ffffff" fill-opacity="0.06"/><rect x="340" y="220" width="430" height="150" rx="16" fill="{a}" fill-opacity="0.85"/><rect x="340" y="395" width="205" height="145" rx="16" fill="#ffffff" fill-opacity="0.06"/><rect x="565" y="395" width="205" height="145" rx="16" fill="#ffffff" fill-opacity="0.06"/>"##, a = self.accent);
+            }
+        }
+        s + "</svg>"
+    }
+
+    /// Stand-in words and cards for a project started from the template by hand, in the shape
+    /// `new_from_template` takes: every title is there to be typed over.
+    pub fn sample(&self) -> Value {
+        let (hook, beats): ((&str, &str), [(&str, &str); 3]) = match self.key {
+            "how-to-steps" => (("How to do it", "in three steps"), [("Start here", "the first step"), ("Then this", "the second step"), ("Finish with", "the last step")]),
+            "announcement" => (("Big news", "goes here"), [("What is new", "say it short"), ("Why it matters", "one reason"), ("When and where", "the details")]),
+            _ => (("Your feature", "in one line"), [("What it does", "in a few words"), ("Why it matters", "to your viewer"), ("How it looks", "in the product")]),
+        };
+        json!({
+            "template": self.key,
+            "name": self.label,
+            "hook": { "line1": hook.0, "line2": hook.1 },
+            "beats": beats.iter().enumerate().map(|(i, (a, b))| json!({ "line1": a, "line2": b, "card": self.placeholder_card(i) })).collect::<Vec<_>>(),
+            "end": { "title": "Your product", "tagline": "Your tagline", "cta": "Try it free", "url": "yourwebsite.com" },
+        })
+    }
+}
+
 pub fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
@@ -169,10 +212,10 @@ mod tests {
         keys.dedup();
         assert_eq!(keys.len(), TEMPLATES.len());
         for t in &TEMPLATES {
-            let (png, w, h) = sf_services::svg::render(&t.background_svg(), 1920).unwrap_or_else(|e| panic!("{}: {e}", t.key));
+            let (png, w, h) = crate::svg::render(&t.background_svg(), 1920).unwrap_or_else(|e| panic!("{}: {e}", t.key));
             assert_eq!((w, h), (1080, 1920), "{}", t.key);
             assert!(png.len() > 1000);
-            assert!(sf_services::svg::render(&t.button_svg("Download free today"), 860).is_ok());
+            assert!(crate::svg::render(&t.button_svg("Download free today"), 860).is_ok());
             // TikTok leaves x 60–940 and y 220–1440 clear
             let [x, y, cw, ch] = t.card;
             assert!(x * WIDTH >= 60.0 && (x + cw) * WIDTH <= 940.0 && y * HEIGHT >= 220.0 && (y + ch) * HEIGHT <= 1440.0, "{}", t.key);
@@ -180,6 +223,12 @@ mod tests {
             let (area, canvas) = (cw * WIDTH / (ch * HEIGHT), CARD_W / CARD_H);
             assert!((area / canvas - 1.0).abs() < 0.08, "{}: {area} vs {canvas}", t.key);
             assert!(find(&t.key.to_uppercase()).is_some());
+            // the stand-in project: three beats, each with a card that draws
+            let sample = t.sample();
+            assert_eq!(sample["beats"].as_array().map(Vec::len), Some(3));
+            for beat in sample["beats"].as_array().unwrap() {
+                assert!(crate::svg::render(beat["card"].as_str().unwrap(), 860).is_ok(), "{}", t.key);
+            }
         }
         assert_eq!(file_stem("  My: demo/video?  "), "My demo video");
         assert_eq!(escape("a<b & \"c\""), "a&lt;b &amp; &quot;c&quot;");

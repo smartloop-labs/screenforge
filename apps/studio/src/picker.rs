@@ -122,6 +122,9 @@ pub enum PickerAction {
     OpenProjectDialog,
     /// An empty project window to drop a video into.
     NewProject,
+    /// A project from the template with this key (a video without a recording), with stand-in
+    /// titles and cards to change in the editor.
+    NewFromTemplate(String),
     StartRecording(RecordRequest),
     /// Open the drag-to-select overlay; the app starts the recording with the chosen rect.
     SelectArea(RecordRequest),
@@ -231,6 +234,8 @@ pub struct Picker {
     /// out after [`STATUS_FOR`] or when the recent panel closes, whichever comes first.
     status: Option<(String, std::time::Instant)>,
     pub show_recent: bool,
+    /// The recent panel shows the templates in place of the recent projects.
+    show_templates: bool,
     /// When the recent panel last closed: the window stays tall for a moment so a quick
     /// re-open does not resize it (and lose the click) again.
     recent_closed_at: Option<std::time::Instant>,
@@ -252,7 +257,7 @@ pub struct Picker {
 
 impl Default for Picker {
     fn default() -> Self {
-        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: false, recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
+        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), show_templates: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
     }
 }
 
@@ -310,12 +315,13 @@ impl Picker {
         let mut texts: Vec<String> = [
             "Don't record camera", "Don't record microphone", "Don't record system audio", "Record system audio from all apps",
             "Recording countdown", "None", "3 seconds", "5 seconds", "10 seconds", "Appearance", "Match system", "Light", "Dark", "Osaka Jade", "Quit ScreenForge",
-            "RECENT PROJECTS", "Open", "New", "No projects yet. Record something or open a project.", "Loading…", "No preview", "0123456789 min h d ago", "Move to Trash",
+            "RECENT PROJECTS", "TEMPLATES", "Templates", "Recent", "Making the video from the template…", "Open", "New", "No projects yet. Record something or open a project.", "Loading…", "No preview", "0123456789 min h d ago", "Move to Trash",
         ]
         .map(String::from)
         .to_vec();
         texts.extend(self.inputs.cameras.iter().chain(&self.inputs.microphones).map(|d| d.name.clone()));
         texts.extend(prefs.recent.iter().filter_map(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()));
+        texts.extend(sf_services::templates::TEMPLATES.iter().flat_map(|t| [t.label.to_string(), "No recording needed".to_string()]));
         ui.fonts_mut(|f| {
             for t in &texts {
                 for font in &fonts {
@@ -651,7 +657,9 @@ impl Picker {
         }
         if self.show_recent && !folder_clicked {
             let other_click = ui.input(|i| i.pointer.any_click()) && !self.pointer_in_recent(ui);
-            let closes = action.is_some() && !matches!(action, Some(PickerAction::RemoveProject(_)));
+            // moving a project to the Trash and starting from a template keep the panel (and
+            // the notice over it) up
+            let closes = action.is_some() && !matches!(action, Some(PickerAction::RemoveProject(_) | PickerAction::NewFromTemplate(_)));
             if closes || egui::Popup::is_any_open(ui.ctx()) || other_click {
                 self.show_recent = false;
                 self.recent_closed_at = Some(std::time::Instant::now());
@@ -681,8 +689,12 @@ impl Picker {
         p.rect(rect, CornerRadius::same(RECENT_RADIUS), tint, Stroke::new(1.0, theme::p().glass_border), egui::StrokeKind::Inside);
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(14.0)).layout(egui::Layout::top_down(egui::Align::Min)));
         inner.horizontal(|ui| {
-            ui.label(RichText::new("RECENT PROJECTS").small().color(theme::p().text_dim));
+            ui.label(RichText::new(if self.show_templates { "TEMPLATES" } else { "RECENT PROJECTS" }).small().color(theme::p().text_dim));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (word, tip) = if self.show_templates { ("Recent", "Back to your recent projects") } else { ("Templates", "Start a video from a template: no recording needed") };
+                if open_button(ui, if self.show_templates { widgets::Icon::Folder } else { widgets::Icon::Sparkle }, word, tip).clicked() {
+                    self.show_templates = !self.show_templates;
+                }
                 if open_button(ui, widgets::Icon::Folder, "Open", "Open a project, or import a Screen Studio project").clicked() {
                     *action = Some(PickerAction::OpenProjectDialog);
                 }
@@ -692,6 +704,16 @@ impl Picker {
             });
         });
         inner.add_space(6.0);
+        if self.show_templates {
+            inner.horizontal(|ui| {
+                for t in &sf_services::templates::TEMPLATES {
+                    if template_card(ui, t).clicked() {
+                        *action = Some(PickerAction::NewFromTemplate(t.key.to_string()));
+                    }
+                }
+            });
+            return;
+        }
         let recent: Vec<PathBuf> = prefs.recent.iter().filter(|p| p.exists()).cloned().collect();
         if recent.is_empty() {
             inner.label(RichText::new("No projects yet. Record something or open a project.").color(theme::p().text_dim));
@@ -971,6 +993,49 @@ fn project_card(ui: &mut Ui, path: &std::path::Path, tex: Option<&egui::TextureH
     let trash_clicked = trash.clicked();
     let _ = trash.on_hover_text("Move to Trash");
     (resp.on_hover_cursor(egui::CursorIcon::PointingHand), trash_clicked)
+}
+
+/// A colour a template gives as `#rrggbb` (its own artwork, not the app's palette).
+fn template_color(hex: &str, alpha: u8) -> Color32 {
+    let v = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0);
+    Color32::from_rgba_unmultiplied((v >> 16) as u8, (v >> 8) as u8, v as u8, alpha)
+}
+
+/// A template in the panel: a small picture of its look (background, glows, a headline and a
+/// card), its name and a line under it. The size of a project card.
+fn template_card(ui: &mut Ui, t: &sf_services::templates::Template) -> egui::Response {
+    let size = CARD_SIZE;
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let thumb = egui::Rect::from_min_size(rect.min, vec2(size.x, 110.0));
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(rect.expand(4.0), CornerRadius::same(12), theme::glass_alpha(14));
+    }
+    p.rect_filled(thumb, CornerRadius::same(8), template_color(t.base, 255));
+    let art = p.with_clip_rect(thumb);
+    // the glows, as a few rings fading out
+    for (color, x, y, r) in t.glows {
+        let c = pos2(thumb.left() + x as f32 * thumb.width(), thumb.top() + y as f32 * thumb.height());
+        for step in 1..=6 {
+            art.circle_filled(c, r as f32 * thumb.height() * step as f32 / 6.0, template_color(color, 14));
+        }
+    }
+    // a headline in two lines and a card under it, as the template lays a beat out
+    let cx = thumb.center().x;
+    art.rect_filled(egui::Rect::from_center_size(pos2(cx, thumb.top() + 22.0), vec2(70.0, 7.0)), CornerRadius::same(2), template_color(sf_services::templates::TEXT, 235));
+    art.rect_filled(egui::Rect::from_center_size(pos2(cx, thumb.top() + 34.0), vec2(92.0, 7.0)), CornerRadius::same(2), template_color(t.accent, 255));
+    let card = egui::Rect::from_center_size(pos2(cx, thumb.top() + 74.0), vec2(96.0, 50.0));
+    art.rect_filled(card, CornerRadius::same(5), template_color(t.panel, 245));
+    for row in 0..3 {
+        let y = card.top() + 12.0 + row as f32 * 13.0;
+        art.circle_filled(pos2(card.left() + 12.0, y), 3.5, template_color(t.accent, 255));
+        art.rect_filled(egui::Rect::from_min_size(pos2(card.left() + 21.0, y - 2.5), vec2(58.0 - row as f32 * 9.0, 5.0)), CornerRadius::same(2), template_color(sf_services::templates::TEXT, 150));
+    }
+    p.rect_stroke(thumb, 8.0, Stroke::new(3.0, theme::p().glass_solid), egui::StrokeKind::Outside);
+    p.text(pos2(rect.left(), thumb.bottom() + 8.0), Align2::LEFT_TOP, t.label, FontId::proportional(13.0), theme::p().text);
+    p.text(pos2(rect.left(), rect.bottom() - 6.0), Align2::LEFT_BOTTOM, "No recording needed", FontId::proportional(11.0), theme::p().text_dim);
+    resp.on_hover_text(t.about)
 }
 
 /// An icon and a word for the recent-projects panel ("Open", "New"): quiet on the glass,

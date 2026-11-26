@@ -34,7 +34,7 @@ use sf_services::host::LocalHost;
 
 use crate::host;
 use crate::record;
-use crate::templates;
+use sf_services::templates;
 
 /// Protocol versions this server speaks, newest first.
 const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -107,6 +107,25 @@ fn text(s: impl Into<String>) -> Value {
 
 fn image(bytes: &[u8], mime: &str) -> Value {
     json!({ "type": "image", "data": base64::engine::general_purpose::STANDARD.encode(bytes), "mimeType": mime })
+}
+
+/// `sf template`: a project from template `key`, with what `spec` says (the arguments of
+/// `new_from_template`) or, without one, the template's stand-in words and cards. Returns the
+/// project's path.
+pub fn from_template(key: &str, name: Option<&str>, folder: Option<&Path>, spec: Option<Value>) -> Result<PathBuf> {
+    let t = templates::find(key).ok_or_else(|| anyhow!("unknown template {key}: {}", templates::TEMPLATES.iter().map(|t| t.key).collect::<Vec<_>>().join(", ")))?;
+    let mut args = spec.unwrap_or_else(|| t.sample());
+    args["template"] = json!(t.key);
+    if let Some(n) = name {
+        args["name"] = json!(n);
+    }
+    if let Some(f) = folder {
+        args["folder"] = json!(f);
+    }
+    let mut server = Server { gpu: None, open: HashMap::new(), recording: None };
+    let content = server.new_from_template(&args)?;
+    let out: Value = content.first().and_then(|c| c["text"].as_str()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null);
+    out["project"].as_str().map(PathBuf::from).ok_or_else(|| anyhow!("the template did not make a project"))
 }
 
 /// Run the server until stdin closes.
@@ -349,7 +368,9 @@ impl Server {
         }
         let name = templates::file_stem(args["name"].as_str().unwrap_or(t.label));
         // the background as a still video, long enough for any piece; the rest is cut at the end
-        const SECONDS: f64 = 180.0;
+        // (about twelve seconds a part at most: a spoken sentence and a breath)
+        let parts = beats.len() + 2;
+        let seconds: f64 = (parts as f64 * 12.0 + 12.0).min(180.0);
         let tmp = std::env::temp_dir().join(format!("sf-template-{}-{}", std::process::id(), chrono::Local::now().format("%H%M%S%3f")));
         std::fs::create_dir_all(&tmp)?;
         let made = (|| -> Result<PathBuf> {
@@ -357,7 +378,7 @@ impl Server {
             let still = tmp.join("background.png");
             std::fs::write(&still, png)?;
             let video = tmp.join(format!("{name}.mp4"));
-            let ok = sf_media::ffmpeg::ffmpeg_cmd()?.arg("-y").args(["-loop", "1", "-framerate", "30", "-i"]).arg(&still).args(["-t", &SECONDS.to_string(), "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "30"]).arg(&video).status()?.success();
+            let ok = sf_media::ffmpeg::ffmpeg_cmd()?.arg("-y").args(["-loop", "1", "-framerate", "30", "-i"]).arg(&still).args(["-t", &seconds.to_string(), "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-r", "30"]).arg(&video).status()?.success();
             if !ok {
                 return Err(anyhow!("could not make the template's background video"));
             }
@@ -392,8 +413,11 @@ impl Server {
             if let Some(v) = &voice {
                 a["voice"] = json!(v);
             }
+            if at + 13_000.0 > seconds * 1000.0 {
+                return Err(anyhow!("the video would be longer than {seconds:.0} s: shorten the narration"));
+            }
             let end = server.run(&path, "add_narration", a)?["endMs"].as_f64().unwrap_or(at + least);
-            Ok((end - at + 450.0).max(least))
+            Ok((end - at + 450.0).clamp(least, 12_500.0))
         };
         let headline = |v: &Value| match (line(v, "line1"), line(v, "line2")) {
             (Some(a), Some(b)) => format!("{a}\n*{b}*"),
@@ -439,7 +463,9 @@ impl Server {
             at += len;
         }
         // the unused rest of the background
-        self.run(&path, "cut", json!({ "ranges": [{ "start_ms": at, "end_ms": SECONDS * 1000.0 }] }))?;
+        self.run(&path, "cut", json!({ "ranges": [{ "start_ms": at, "end_ms": seconds * 1000.0 }] }))?;
+        // the picture in the app's recent projects: the piece itself, not the bare background
+        let _ = sf_session::preview::write_quicklook_preview(&path);
         let open = self.project(&path)?;
         let out = json!({
             "project": path, "template": t.key, "durationMs": open.session.duration_ms().round(), "segments": segments,
