@@ -88,6 +88,12 @@ The Windows build does not ship the tool yet.
   In the app the same templates are under *Templates* in the recent-projects panel: choosing
   one makes the project with stand-in titles and cards to change by hand. From the shell:
   `sf template feature-short` (add `--spec file.json` for your own words and cards).
+- **Your own templates**: `save_as_template` keeps a project as it is now (titles, cards,
+  narration, music, footage) in `~/Documents/ScreenForge Templates`; `list_templates` shows
+  them under `yours`, and `new_from_template` with that name starts a new project as a copy.
+  In the app: *Presets → Save project as template*, then *Templates* on the start panel. A
+  template is a folder ending in `.screenforgetemplate`: copy it to another computer's
+  templates folder to share it.
 - **Artwork the agent draws**: `add_overlay` takes `svg` in place of a file, so an agent can
   put an illustration, a diagram or a card over any video.
 - **TikTok, Reels and Shorts**: `set_format` makes the video 1080×1920 and keeps the text

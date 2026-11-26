@@ -125,6 +125,10 @@ pub enum PickerAction {
     /// A project from the template with this key (a video without a recording), with stand-in
     /// titles and cards to change in the editor.
     NewFromTemplate(String),
+    /// A project from a template the user saved (its package's path).
+    NewFromUserTemplate(PathBuf),
+    /// Move a template the user saved to the Trash.
+    RemoveTemplate(PathBuf),
     StartRecording(RecordRequest),
     /// Open the drag-to-select overlay; the app starts the recording with the chosen rect.
     SelectArea(RecordRequest),
@@ -238,6 +242,8 @@ pub struct Picker {
     show_templates: bool,
     /// The templates' pictures, loaded when the templates are first shown.
     template_pictures: std::collections::HashMap<&'static str, egui::TextureHandle>,
+    /// The pictures of the templates the user saved, by package path (`None`: it has none).
+    user_pictures: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
     /// When the recent panel last closed: the window stays tall for a moment so a quick
     /// re-open does not resize it (and lose the click) again.
     recent_closed_at: Option<std::time::Instant>,
@@ -259,7 +265,7 @@ pub struct Picker {
 
 impl Default for Picker {
     fn default() -> Self {
-        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), show_templates: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), template_pictures: Default::default(), recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
+        Picker { thumbs: None, inputs: Inputs::default(), mode: None, camera: None, microphone: None, mic_meter: None, bar_w: PILL_SIZE.x, system_audio: false, countdown_ms: 5000, status: None, show_recent: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), show_templates: std::env::var_os("SF_SHOW_TEMPLATES").is_some(), template_pictures: Default::default(), user_pictures: Default::default(), recent_closed_at: None, recent_scroll_to: None, recent_rect: egui::Rect::NOTHING, bar_rect: egui::Rect::NOTHING, wanted_height: BAR_WINDOW_H, devices_rx: None, menus_warm: false, agents: Default::default() }
     }
 }
 
@@ -659,7 +665,7 @@ impl Picker {
         }
         if self.show_recent && !folder_clicked {
             let other_click = ui.input(|i| i.pointer.any_click()) && !self.pointer_in_recent(ui);
-            let closes = action.is_some() && !matches!(action, Some(PickerAction::RemoveProject(_)));
+            let closes = action.is_some() && !matches!(action, Some(PickerAction::RemoveProject(_) | PickerAction::RemoveTemplate(_)));
             if closes || egui::Popup::is_any_open(ui.ctx()) || other_click {
                 self.show_recent = false;
                 self.recent_closed_at = Some(std::time::Instant::now());
@@ -708,6 +714,22 @@ impl Picker {
             // more templates than fit: trackpad or wheel scrolling, as for the recent projects
             egui::ScrollArea::horizontal().id_salt("template_cards").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut inner, |ui| {
                 ui.horizontal(|ui| {
+                    // the templates the user saved come first, each with the picture its
+                    // project had; the trash button moves one to the Trash
+                    let yours = sf_services::templates::user_folder().map(|f| sf_services::templates::user_templates(&f)).unwrap_or_default();
+                    for t in &yours {
+                        let picture = self.user_pictures.entry(t.path.clone()).or_insert_with(|| {
+                            let img = image::open(t.picture()).ok()?.thumbnail(528, 330).to_rgba8();
+                            let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], &img);
+                            Some(ui.ctx().load_texture(format!("user-template-{}", t.name), ci, egui::TextureOptions::LINEAR))
+                        });
+                        let (card, trash) = project_card(ui, &t.path, picture.as_ref(), false);
+                        if trash {
+                            *action = Some(PickerAction::RemoveTemplate(t.path.clone()));
+                        } else if card.on_hover_text("Your template: a new project that starts as the one you saved").clicked() {
+                            *action = Some(PickerAction::NewFromUserTemplate(t.path.clone()));
+                        }
+                    }
                     for t in &sf_services::templates::TEMPLATES {
                         if !self.template_pictures.contains_key(t.key) {
                             if let Some(img) = template_picture(t.key).and_then(|png| image::load_from_memory(png).ok()).map(|i| i.to_rgba8()) {

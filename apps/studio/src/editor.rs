@@ -1813,6 +1813,19 @@ impl Editor {
         self.renamed_to = Some(new_path);
     }
 
+    /// Keep the project as it is now as a template in the user's templates folder.
+    fn save_as_template(&mut self) {
+        self.save_if_dirty();
+        // the picture the template shows in the Templates view
+        let _ = sf_session::preview::write_quicklook_preview(&self.session.pkg.path);
+        let name = self.session.pkg.project.name.clone();
+        let saved = sf_services::templates::user_folder().ok_or_else(|| "there is no Documents folder to keep templates in".to_string()).and_then(|folder| sf_services::templates::save_as_template(&self.session.pkg.path, &name, &folder));
+        match saved {
+            Ok(path) => self.set_status(format!("Saved as template “{}”: it is under Templates on the start panel", path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(name))),
+            Err(e) => self.set_status(format!("Could not save the template: {e}")),
+        }
+    }
+
     fn presets_menu(&mut self, ui: &mut egui::Ui) {
         const MENU_W: f32 = 232.0;
         ui.set_width(MENU_W);
@@ -1846,6 +1859,10 @@ impl Editor {
             }
         }
         ui.separator();
+        if ui.button("Save project as template").on_hover_text("Keep this whole project (titles, cards, narration, music) to start new ones from: it shows under Templates on the start panel").clicked() {
+            self.save_as_template();
+            ui.close();
+        }
         if ui.button("Save preset as…").clicked() {
             self.preset_dialog = Some(PresetDialog::new(PresetAction::SaveAs, format!("Preset {}", chrono_like_stamp())));
             ui.close();

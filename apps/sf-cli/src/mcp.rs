@@ -283,7 +283,15 @@ impl Server {
                 rec.cancel();
                 Ok(vec![text("Recording deleted.")])
             }
-            "list_templates" => Ok(vec![text(json!({ "templates": templates::TEMPLATES.iter().map(templates::Template::json).collect::<Vec<_>>(), "cardCanvas": { "width": templates::CARD_W, "height": templates::CARD_H }, "cards": templates::card_guide() }).to_string())]),
+            "save_as_template" => {
+                let project = expand(args["project"].as_str().ok_or_else(|| anyhow!("`project` (the path of a .screenforge package) is required"))?);
+                let _ = sf_session::preview::write_quicklook_preview(&project);
+                let name = args["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).or_else(|| project.file_stem().map(|s| s.to_string_lossy().into_owned())).unwrap_or_default();
+                let folder = templates::user_folder().ok_or_else(|| anyhow!("there is no Documents folder to keep templates in"))?;
+                let saved = templates::save_as_template(&project, &name, &folder).map_err(|e| anyhow!(e))?;
+                Ok(vec![text(json!({ "template": saved.file_stem().map(|s| s.to_string_lossy().into_owned()), "path": saved, "note": "It is listed by list_templates under `yours` and shows under Templates in the app. new_from_template with this name makes a new project that starts as this one is now." }).to_string())])
+            }
+            "list_templates" => Ok(vec![text(json!({ "yours": templates::user_folder().map(|f| templates::user_templates(&f)).unwrap_or_default().iter().map(|t| json!({ "template": t.name, "about": "A template the user saved from a project: new_from_template with this name copies it as a new project (hook, beats and end are not taken: change its titles afterwards with get_project and update_clip)." })).collect::<Vec<_>>(), "templates": templates::TEMPLATES.iter().map(templates::Template::json).collect::<Vec<_>>(), "cardCanvas": { "width": templates::CARD_W, "height": templates::CARD_H }, "cards": templates::card_guide() }).to_string())]),
             "new_from_template" => self.new_from_template(&args, &|_, _| {}),
             "import_video" => {
                 let src = args["source"].as_str().ok_or_else(|| anyhow!("`source` is required"))?;
@@ -351,7 +359,18 @@ impl Server {
     /// `progress(done, total)` is called as the background and then each part is finished.
     fn new_from_template(&mut self, args: &Value, progress: &dyn Fn(u64, u64)) -> Result<Vec<Value>> {
         use templates::{Element, CARD, CARD_H, CARD_W, HEIGHT, WIDTH};
-        let t = templates::find(args["template"].as_str().unwrap_or_default()).ok_or_else(|| anyhow!("unknown template: list_templates shows the ones there are"))?;
+        let asked = args["template"].as_str().unwrap_or_default().trim();
+        // a template the user saved: a copy of that project, to be changed afterwards
+        if templates::find(asked).is_none() {
+            if let Some(yours) = templates::user_folder().map(|f| templates::user_templates(&f)).unwrap_or_default().into_iter().find(|t| t.name.eq_ignore_ascii_case(asked)) {
+                let projects = args["folder"].as_str().map(expand).unwrap_or_else(sf_session::create::default_projects_folder);
+                let path = templates::project_from_user_template(&yours.path, &projects).map_err(|e| anyhow!(e))?;
+                progress(1, 1);
+                let open = self.project(&path)?;
+                return Ok(vec![text(json!({ "project": path, "template": yours.name, "durationMs": open.session.duration_ms().round(), "next": "A copy of the user's template, as they saved it: get_project lists its titles and overlays; change the words with update_clip and the narration with update_narration, then render_frame and export." }).to_string())]);
+            }
+        }
+        let t = templates::find(asked).ok_or_else(|| anyhow!("unknown template: list_templates shows the ones there are"))?;
         let beats = args["beats"].as_array().cloned().unwrap_or_default();
         if beats.is_empty() || beats.len() > 8 {
             return Err(anyhow!("`beats` takes 1 to 8 beats, each {{ line1, line2, narration, card }}"));
@@ -984,6 +1003,11 @@ pub fn tool_list() -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": { "project": project }, "required": ["project"] }
         },
         {
+            "name": "save_as_template",
+            "description": "Keep a project as a template of the user's own: the whole project as it is now (titles, cards, narration, music, footage) is copied to their templates folder, and new projects can be started from it, in the app (Templates) or with new_from_template. Use it when the user asks to save, keep or reuse a project as a template.",
+            "inputSchema": { "type": "object", "properties": { "project": project, "name": { "type": "string", "description": "The template's name (default: the project's)" } }, "required": ["project"] }
+        },
+        {
             "name": "list_templates",
             "description": "The templates for a video made without a recording (a feature short, a how-to in steps, an announcement, a top three, a quick tip, a did-you-know, a before and after, a testimonial, a sale): each one's look and what to write for it, its colours, and how to give the cards. Read it before new_from_template.",
             "inputSchema": { "type": "object", "properties": {} },
@@ -995,7 +1019,7 @@ pub fn tool_list() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "template": { "type": "string", "enum": templates::TEMPLATES.iter().map(|t| t.key).collect::<Vec<_>>() },
+                    "template": { "type": "string", "description": format!("One of {}, or the name of a template the user saved (list_templates `yours`): that one is copied as it is, and beats are not needed", templates::TEMPLATES.iter().map(|t| t.key).collect::<Vec<_>>().join(", ")) },
                     "name": { "type": "string", "description": "Project name" },
                     "platform": { "type": "string", "enum": ["tiktok", "reels", "shorts"], "description": "Default tiktok" },
                     "voice": { "type": "string", "description": "Narrator, when the user names one (el_eric, am_fenrir …, as add_narration); left out, the one chosen in the Narration panel" },
@@ -1012,7 +1036,7 @@ pub fn tool_list() -> Vec<Value> {
                     "end": { "type": "object", "description": "The closing card", "properties": { "title": { "type": "string", "description": "The product or brand name" }, "tagline": { "type": "string" }, "cta": { "type": "string", "description": "The button's words, e.g. Download free today" }, "url": { "type": "string" }, "narration": { "type": "string" } } },
                     "folder": folder
                 },
-                "required": ["template", "beats"]
+                "required": ["template"]
             }
         },
         {

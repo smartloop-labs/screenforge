@@ -526,7 +526,7 @@ impl App {
             Ok(mut ed) => {
                 ed.fresh_recording = self.fresh_open.take().is_some_and(|f| f == path);
                 // a project started from a template is kept only if the user says so on closing
-                ed.fresh_template = ed.fresh_recording && template_of(&path).is_some();
+                ed.fresh_template = ed.fresh_recording && (template_of(&path).is_some() || user_template_of(&path).is_some());
                 if opened != path {
                     self.prefs.recent.retain(|r| r.exists());
                 }
@@ -617,6 +617,15 @@ fn project_dialog() -> rfd::FileDialog {
 /// An "open" path that stands for a new project from a template (`template:<key>`), as a
 /// pasted Loom link stands for its import.
 const TEMPLATE_SCHEME: &str = "template:";
+
+/// An "open" path that stands for a new project from a template the user saved
+/// (`template-file:<the template's path>`).
+const USER_TEMPLATE_SCHEME: &str = "template-file:";
+
+/// The saved template an "open" path stands for.
+fn user_template_of(path: &std::path::Path) -> Option<PathBuf> {
+    path.to_str().and_then(|s| s.strip_prefix(USER_TEMPLATE_SCHEME)).map(PathBuf::from)
+}
 
 /// The template an "open" path stands for.
 fn template_of(path: &std::path::Path) -> Option<&'static sf_services::templates::Template> {
@@ -717,6 +726,9 @@ fn open_or_import(path: &std::path::Path, progress: &sf_project::ImportProgress)
     }
     if let Some(template) = template_of(path) {
         return project_from_template(template, progress);
+    }
+    if let Some(template) = user_template_of(path) {
+        return sf_services::templates::project_from_user_template(&template, &sf_session::create::default_projects_folder()).map_err(|e| anyhow::anyhow!(e));
     }
     if !sf_recording::import::is_video(path) {
         return sf_session::create::package_to_open(path, progress);
@@ -1028,6 +1040,9 @@ fn short_duration(secs: f64) -> String {
 fn ed_name(p: &std::path::Path) -> String {
     if let Some(t) = template_of(p) {
         return t.label.to_string();
+    }
+    if let Some(t) = user_template_of(p) {
+        return t.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     }
     p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -1392,6 +1407,22 @@ impl eframe::App for App {
             }
             Some(PickerAction::OpenProjectDialog) => self.ask(ctx, pick_project, &mut open_request),
             // opened like an import: the editor window with the progress dialog, then the project
+            Some(PickerAction::NewFromUserTemplate(template)) => {
+                let request = PathBuf::from(format!("{USER_TEMPLATE_SCHEME}{}", template.display()));
+                self.fresh_open = Some(request.clone());
+                open_request = Some(request);
+            }
+            Some(PickerAction::RemoveTemplate(p)) => {
+                let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                match crate::os::move_to_trash(&p) {
+                    Ok(()) => {
+                        if let Screen::Picker(pk) = &mut self.screen {
+                            pk.set_status(format!("Moved the template “{name}” to the Trash"));
+                        }
+                    }
+                    Err(e) => self.error = Some(format!("Could not move the template “{name}” to the Trash: {e}")),
+                }
+            }
             Some(PickerAction::NewFromTemplate(key)) => {
                 let request = PathBuf::from(format!("{TEMPLATE_SCHEME}{key}"));
                 self.fresh_open = Some(request.clone());

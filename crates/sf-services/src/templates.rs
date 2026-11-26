@@ -9,6 +9,8 @@
 //! overlay of its own and each piece of text a title, so every one can be selected, moved,
 //! retyped or deleted in the editor, like the layers of an ungrouped drawing.
 
+use std::path::{Path, PathBuf};
+
 use serde_json::{json, Value};
 
 /// The frame every template is drawn for.
@@ -256,6 +258,101 @@ impl Template {
     }
 }
 
+/// A template the user saved from a project: a copy of the whole project package under another
+/// extension, in a folder of its own. Making a project from it copies it back.
+pub const TEMPLATE_EXTENSION: &str = "screenforgetemplate";
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserTemplate {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+impl UserTemplate {
+    /// The picture the project had when it was saved, when there is one.
+    pub fn picture(&self) -> PathBuf {
+        self.path.join("QuickLook").join("Preview.png")
+    }
+}
+
+/// Where the user's templates are kept: `~/Documents/ScreenForge Templates`, beside the presets.
+pub fn user_folder() -> Option<PathBuf> {
+    sf_project::Preset::default_folder().and_then(|p| p.parent().map(|d| d.join("ScreenForge Templates")))
+}
+
+/// The templates in `folder`, by name.
+pub fn user_templates(folder: &Path) -> Vec<UserTemplate> {
+    let mut out: Vec<UserTemplate> = std::fs::read_dir(folder)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == TEMPLATE_EXTENSION) && p.join(sf_project::package::PROJECT_FILE).is_file())
+        .map(|p| UserTemplate { name: p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), path: p })
+        .collect();
+    out.sort_by_key(|t| t.name.to_lowercase());
+    out
+}
+
+fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        if e.file_type()?.is_dir() {
+            copy_dir(&src, &dst)?;
+        } else if e.file_name() != "project.json.bak" {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+/// `<dir>/<stem>.<ext>`, or with " 2", " 3" … after the name when that is taken.
+fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    (1..).map(|n| dir.join(if n == 1 { format!("{stem}.{ext}") } else { format!("{stem} {n}.{ext}") })).find(|p| !p.exists()).expect("a free name")
+}
+
+/// Save the project at `project` as a template called `name` in `folder`: everything in the
+/// package is copied (its titles, cards, narration, music and footage), so a project made from
+/// the template starts as this one is now. Returns the template's path.
+pub fn save_as_template(project: &Path, name: &str, folder: &Path) -> Result<PathBuf, String> {
+    if !project.join(sf_project::package::PROJECT_FILE).is_file() {
+        return Err(format!("{} is not a ScreenForge project", project.display()));
+    }
+    std::fs::create_dir_all(folder).map_err(|e| format!("could not make the templates folder: {e}"))?;
+    let to = free_path(folder, &file_stem(name), TEMPLATE_EXTENSION);
+    copy_dir(project, &to).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&to);
+        format!("could not save the template: {e}")
+    })?;
+    Ok(to)
+}
+
+/// A new project in `projects` from the user's template at `template`, named after it, with an
+/// id of its own. Returns the project's path.
+pub fn project_from_user_template(template: &Path, projects: &Path) -> Result<PathBuf, String> {
+    if !template.join(sf_project::package::PROJECT_FILE).is_file() {
+        return Err(format!("{} is not a ScreenForge template", template.display()));
+    }
+    std::fs::create_dir_all(projects).map_err(|e| format!("could not make the projects folder: {e}"))?;
+    let stem = template.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Template".into());
+    let to = free_path(projects, &stem, sf_project::PACKAGE_EXTENSION);
+    let made = copy_dir(template, &to).map_err(|e| e.to_string()).and_then(|()| {
+        let mut pkg = sf_project::ProjectPackage::open(&to).map_err(|e| e.to_string())?;
+        pkg.project.id = sf_project::ids::new_id();
+        pkg.project.name = to.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(stem);
+        pkg.save().map_err(|e| e.to_string())
+    });
+    match made {
+        Ok(()) => Ok(to),
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&to);
+            Err(format!("could not make a project from the template: {e}"))
+        }
+    }
+}
+
 /// How to give a card, for the tool descriptions.
 pub fn card_guide() -> String {
     format!(
@@ -337,6 +434,38 @@ mod tests {
         assert!(TEMPLATES[0].card_elements(&json!({ "type": "pie" })).is_err());
         assert!(TEMPLATES[0].card_elements(&json!({ "type": "list" })).is_err());
         assert_eq!(mix("#000000", "#ffffff", 0.5), "#808080");
+    }
+
+    #[test]
+    fn a_project_is_saved_as_a_template_and_made_into_projects_again() {
+        let dir = std::env::temp_dir().join(format!("sf-user-templates-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (projects, folder) = (dir.join("projects"), dir.join("templates"));
+        let source = projects.join("Launch.screenforge");
+        std::fs::create_dir_all(source.join("assets")).unwrap();
+        let mut project = sf_project::Project::new("Launch");
+        project.config.output.extra.insert("sfTemplate".into(), json!("sale"));
+        std::fs::write(source.join(sf_project::package::PROJECT_FILE), serde_json::to_vec(&json!({ "json": project, "meta": { "values": {}, "v": 1 } })).unwrap()).unwrap();
+        std::fs::write(source.join("assets").join("card.png"), b"png").unwrap();
+        std::fs::write(source.join("project.json.bak"), b"old").unwrap();
+        let saved = save_as_template(&source, "My launch", &folder).unwrap();
+        assert_eq!(saved.file_name().unwrap(), "My launch.screenforgetemplate");
+        assert!(saved.join("assets/card.png").is_file() && !saved.join("project.json.bak").exists());
+        // the same name again goes beside it
+        assert_eq!(save_as_template(&source, "My launch", &folder).unwrap().file_name().unwrap(), "My launch 2.screenforgetemplate");
+        let listed = user_templates(&folder);
+        assert_eq!(listed.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["My launch", "My launch 2"]);
+        // a project from it: a copy with its own name and id, the template untouched
+        let made = project_from_user_template(&listed[0].path, &projects).unwrap();
+        assert_eq!(made.file_name().unwrap(), "My launch.screenforge");
+        let pkg = sf_project::ProjectPackage::open(&made).unwrap();
+        assert_eq!(pkg.project.name, "My launch");
+        assert_ne!(pkg.project.id, project.id);
+        assert_eq!(pkg.project.config.output.extra.get("sfTemplate"), Some(&json!("sale")));
+        assert!(made.join("assets/card.png").is_file());
+        assert_eq!(project_from_user_template(&listed[0].path, &projects).unwrap().file_name().unwrap(), "My launch 2.screenforge");
+        assert!(save_as_template(&dir.join("nope"), "x", &folder).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(file_stem("  My: demo/video?  "), "My demo video");
         assert_eq!(escape("a<b & \"c\""), "a&lt;b &amp; &quot;c&quot;");
     }
