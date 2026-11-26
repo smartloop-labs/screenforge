@@ -12,24 +12,82 @@ This is the full text of the main pages of screenforge.studio. The short index i
 
 Source: https://screenforge.studio/
 
-## AI screen recorder and video editor. Pro demos, guides, lessons and promos, made easy. Just ask. It edits.
+Black Friday: 90% off the Creator license, US$4.90 instead of US$49, with code BLACKFRIDAY · through Cyber Monday · Get the deal
 
-- cut the ums and the long pauses
-- zoom on my clicks
-- get this under a minute
-- add calm music and a mountain photo
+## Agentic screen recording and editing. Ask your agent for a demo, guide, lesson or promo. It records. It edits.
 
-A screen recorder with integrated AI to supercharge your video editing. Record your screen on Mac, Windows or Linux, or drop in any video, then ask for the edit or fine-tune it by hand.
+- record this window while I fix the bug
+- cut the pauses, zoom on what matters
+- narrate it and add calm music
+- export it and give me the link
 
-Download for macOS Free to try · Pro adds the AI agent · also on Windows and Linux
+A screen recorder and video editor your AI agent can run. Connect Claude Code, Cursor, Codex or any MCP client, or use the agent built into the app, and get a finished video from one description.
+
+Download for macOS Connect your agent Free to try · Pro adds the built-in AI agent · also on Windows and Linux
 
 Backed by
 
-What it does
+Recorded, edited and exported by Claude Code through ScreenForge, while it rebuilt this page. Nobody touched the timeline.
+
+- ConnectOne command adds ScreenForge to Claude Code, Cursor, VS Code or Codex.
+- Ask“Record this window while I walk through the fix, then tighten it up.”
+- Get the videoCut, zoomed, captioned and narrated, then exported with a link to share.
+
+From your agent
+
+## One description in. A finished video out.
+
+ScreenForge comes with an MCP server, so the agent you already work with can record your screen and edit the result. Everything runs on your computer, and editing with your own agent uses none of ScreenForge’s AI credits.
+
+Claude Code · Cursor · VS Code · Codex
+
+### Connect in one step
+
+In Claude Code, add the marketplace and install the plugin. It connects the server and teaches Claude how to record, edit, check its work and export. Other clients take one line of config, or a click in the app’s gear menu.
+
+/plugin marketplace add smartloop-labs/screenforge-plugins
+
+/plugin install screenforge@screenforge
+
+Setup for every client
+
+Record
+
+### “Record this window”
+
+A whole display, or one window followed as it moves, with your microphone and system audio if you want them. Your agent can pause, resume and drop markers while you work.
+
+Edit
+
+### Every tool the editor has
+
+Cuts, speed, zooms, masks, titles, chapters, music, captions, narration and every look setting. It renders frames to check its own work, then exports with a title, description and share link.
+
+One call
+
+### Hand over the whole job
+
+“A 30-second vertical cut with narration and music.” With Pro, ScreenForge’s own editor does the looking and the cutting and reports back, so your agent spends few tokens.
+
+Templates
+
+### Nothing to record? Still a video
+
+Explainers, how-tos and announcements start from a template. Your agent writes the hook and the beats; ScreenForge lays them out, narrates and captions them.
+
+The MCP server is in the macOS and Linux apps today. The agent built into the app works on Windows too.
+
+In the app
+
+## Or ask inside the app.
+
+The same kind of agent is built into the editor. Say what you want and watch the timeline change as it works, then fine-tune anything by hand. One `⌘Z` undoes a whole answer.
+
+The app
 
 ## Record, edit, export. One native app.
 
-A recorder and a timeline editor in one window. No Electron, no web view; the compositor runs on the GPU and the UI is drawn natively.
+Everything your agent drives is yours to use by hand: a recorder and a timeline editor in one window. No Electron, no web view; the compositor runs on the GPU and the UI is drawn natively.
 
 AI editing agent new
 
@@ -127,7 +185,7 @@ Native PipeWire capture on Wayland, full input capture on X11, ffmpeg included. 
 
 Download for Linux
 
-Native app, 100% RustRecordings never leave your computerNo analytics in the appCaptions and voices run on device
+Native app, GPU renderedRecordings never leave your computerNo analytics in the appCaptions and voices run on device
 
 Pricing
 
@@ -136,6 +194,8 @@ Pricing
 Recording and editing are free, and your first 2 exports are free. After that, exporting needs a license: Pro adds the agent with 1,000 credits a month and unlimited export; Creator is export alone, US$49 once. Export keys are verified offline.
 
 Try freeRecord, edit and export your first 2 videos. Pay only when you want more.
+
+Your agentRecord and edit from Claude Code, Cursor or any MCP client. No ScreenForge credits used.
 
 VoicesSix on-device voices for narration, and studio ElevenLabs voices read online. All free.
 
@@ -160,9 +220,9 @@ Only need export? Creator is US$49 once. See all plans
 
 Get started
 
-## Record your first clip in a minute.
+## Ask for your first video today.
 
-Download for macOS
+Download for macOS Connect your agent
 
 ---
 
@@ -291,6 +351,7 @@ US$49oncelifetime
 one payment · the key never expires
 
 - Unlimited export to MP4 (H.264 / HEVC), ProRes, GIF and WebM
+- Record and edit with your own AI agent (Claude Code, Cursor, Codex) through the MCP server, on macOS and Linux: no credits needed
 - Verified offline; works without a network
 - Every future update included
 - One key per email, active on one computer at a time; move it whenever you switch

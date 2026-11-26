@@ -15,7 +15,7 @@ import site_partials  # the shared footer
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'site'
 PAGES = ['index.html', 'pricing.html', 'download.html', 'comparison.html']
 ENGLISH_ONLY = ['privacy.html', 'terms.html', 'contact.html', 'success.html', '404.html']
-ASSETS = ['favicon.ico', 'favicon.svg', 'favicon-512.png', 'icon.png', 'apple-touch-icon.png', 'demo-v7.mp4', 'demo-poster-v7.jpg']
+ASSETS = ['favicon.ico', 'favicon.svg', 'favicon-512.png', 'icon.png', 'apple-touch-icon.png', 'agent-demo-v1.mp4', 'agent-demo-poster-v1.jpg', 'app-demo-v1.mp4', 'app-demo-poster-v1.jpg']
 
 
 def must(s, old, new, count=1):
@@ -133,13 +133,13 @@ INDEX_JSONLD = '''<script type="application/ld+json">
     },
     {
       "@type": "VideoObject",
-      "name": "El agente de IA de ScreenForge edita un screencast a partir de una sola petición",
+      "name": "El agente de IA de ScreenForge edita una grabación a partir de una sola petición",
       "inLanguage": "en",
-      "description": "Con una sola petición, el agente recorta la grabación a menos de un minuto, acelera las esperas, añade música de fondo y una foto de montañas de Unsplash como fondo, y narra el recorrido con una voz de IA y subtítulos.",
-      "thumbnailUrl": "https://screenforge.studio/demo-poster-v7.jpg",
-      "contentUrl": "https://screenforge.studio/demo-v7.mp4",
-      "uploadDate": "2026-10-24",
-      "duration": "PT30S"
+      "description": "Una sola petición escrita en el panel Agente de la app de ScreenForge: el agente corta la espera del principio, acelera la grabación hasta dejarla en menos de 30 segundos, pone un fondo de montañas y añade música de fondo, y cada cambio aparece en la línea de tiempo.",
+      "thumbnailUrl": "https://screenforge.studio/app-demo-poster-v1.jpg",
+      "contentUrl": "https://screenforge.studio/app-demo-v1.mp4",
+      "uploadDate": "2026-11-26",
+      "duration": "PT25S"
     }
   ]
 }
