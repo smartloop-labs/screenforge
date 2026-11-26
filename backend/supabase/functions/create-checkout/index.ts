@@ -13,7 +13,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 //   topup_NN   a pack of agent credits (_shared/credits.ts PACKS), for a Pro subscriber's email:
 //              the agent is a Pro feature, and computers spend the credits of the license they
 //              are activated for.
-// License plans also take, all optional:
+// Every plan also takes, all optional (a top-up needs its email):
 //   email    prefills Checkout (Stripe asks for it otherwise)
 //   promo    a promotion code typed in the app, applied to the session (an unknown or expired
 //            code is a 400 with the reason, so the app shows it before opening the browser)
@@ -91,15 +91,17 @@ serve(async (req) => {
     if (!(await proOrStaff(db(), address))) return json({ error: "Credit packs top up Pro. Upgrade to Pro first, or use the email of your Pro subscription." }, 403);
     const price = Deno.env.get(pack.priceEnv);
     if (!price) return json({ error: "Credit packs are not on sale yet." }, 503);
-    const session = await stripe.checkout.sessions.create({
+    // a code covering the whole pack completes the session with "no_payment_required":
+    // stripe-webhook adds the credits all the same
+    return await create({
       mode: "payment",
       line_items: [{ price, quantity: 1 }],
       customer_email: address,
+      ...discount,
       ...thanks("topup"),
       metadata: { kind: "topup", plan, credits: String(pack.credits), email: address },
       payment_intent_data: { metadata: { kind: "topup", plan, credits: String(pack.credits), email: address } },
     });
-    return json({ url: session.url });
   }
 
   if (plan === "monthly") {
