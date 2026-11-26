@@ -55,10 +55,12 @@ impl LocalHost {
         if let Ok(files) = std::fs::read_dir(session.pkg.path.join("assets")) {
             looks.extend(files.flatten().map(|f| f.file_name().to_string_lossy().into_owned()).filter(|n| n.to_ascii_lowercase().ends_with(".cube")));
         }
-        // the Jamendo tracks the user hearted, CC BY only: the agent cannot know whether the video
-        // earns money, so a non-commercial favourite is left out
+        // the tracks the user hearted: Jamendo ones, and those kept as files of their own (a
+        // Jamendo download hearted without its search result, or a file they brought in). CC BY
+        // only where there is a licence: the agent cannot know whether the video earns money, so
+        // a non-commercial favourite is left out. A file without a licence is the user's own.
         let library = music::Library::load();
-        let favorites: Vec<music::Track> = library.favorites.iter().filter(|t| t.kind == music::TrackKind::Jamendo && music::usable(t.license_url.as_deref(), false)).cloned().collect();
+        let favorites: Vec<music::Track> = library.favorites.iter().filter(|t| offered(t)).cloned().collect();
         let audio = &session.pkg.project.config.audio;
         let options = json!({
             "wallpapers": assets.list_backgrounds(),
@@ -107,6 +109,15 @@ impl LocalHost {
 }
 
 /// A Jamendo track as the agent sees it (a favourite or a search result).
+/// A favourite the agent may put under a video: see where the favourites are listed.
+fn offered(t: &music::Track) -> bool {
+    match t.kind {
+        music::TrackKind::Jamendo => music::usable(t.license_url.as_deref(), false),
+        music::TrackKind::Own => t.license_url.is_none() || music::usable(t.license_url.as_deref(), false),
+        music::TrackKind::Library => false, // bundled tracks are marked in `music` instead
+    }
+}
+
 fn track_value(t: &music::Track) -> Value {
     let credit = music::Credit { title: t.name.clone(), artist: t.artist.clone(), url: None, license_url: t.license_url.clone() };
     json!({ "id": t.id, "name": t.name, "artist": t.artist, "seconds": t.duration, "license": credit.license() })
@@ -179,9 +190,13 @@ impl Host for LocalHost {
     fn download_music(&self, id: &str) -> Result<Value, String> {
         let track = self.tracks.lock().map_err(|_| "busy")?.iter().find(|t| t.id == id).cloned().ok_or("that id is not in get_options favoriteMusic or a search_music result")?;
         let assets = self.project_dir.join("assets");
-        let applied = music::download_track(&track, &assets, &AtomicU32::new(0), &*self.repaint)?;
-        let credit = music::credit(&assets, &applied.file_name).map(|c| c.text());
-        Ok(json!({ "fileName": applied.file_name, "name": track.name, "artist": track.artist, "credit": credit }))
+        let file_name = match track.kind {
+            // a favourite kept as a file: copied from the favourites folder, with its credit
+            music::TrackKind::Own => music::place_own(&track, &assets)?,
+            _ => music::download_track(&track, &assets, &AtomicU32::new(0), &*self.repaint)?.file_name,
+        };
+        let credit = music::credit(&assets, &file_name).map(|c| c.text());
+        Ok(json!({ "fileName": file_name, "name": track.name, "artist": track.artist, "credit": credit }))
     }
 
     fn favorite_music(&self, track: &str, favorite: bool) -> Result<Value, String> {
@@ -282,5 +297,23 @@ impl Host for LocalHost {
             return Err(format!("no file at {}", src.display()));
         }
         media::import(&self.project_dir, &src)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn favourites_kept_as_files_are_offered_to_the_agent() {
+        let track = |kind, license: Option<&str>| music::Track { id: "x".into(), name: "T".into(), artist: "A".into(), duration: 0, download: "x.mp3".into(), image: None, license_url: license.map(str::to_string), share_url: None, kind };
+        let (by, nc) = (Some("http://creativecommons.org/licenses/by/3.0/"), Some("http://creativecommons.org/licenses/by-nc/3.0/"));
+        assert!(offered(&track(music::TrackKind::Jamendo, by)));
+        assert!(!offered(&track(music::TrackKind::Jamendo, nc)));
+        // a Jamendo download hearted from a project, and a file of the user's own
+        assert!(offered(&track(music::TrackKind::Own, by)));
+        assert!(offered(&track(music::TrackKind::Own, None)));
+        assert!(!offered(&track(music::TrackKind::Own, nc)));
+        assert!(!offered(&track(music::TrackKind::Library, None)));
     }
 }
