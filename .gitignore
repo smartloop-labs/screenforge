@@ -18,3 +18,8 @@ backend/supabase/.temp/
 # wrangler (Cloudflare Pages deploy) cache
 .wrangler/
 .claude/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example

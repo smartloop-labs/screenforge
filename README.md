@@ -1,7 +1,7 @@
 # ScreenForge
 
 [![Rust](https://img.shields.io/badge/Rust-100%25-dea584?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![License: proprietary](https://img.shields.io/badge/License-proprietary-6b7280)](LICENSE)
+[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/mehfuzh/screenforge?sort=semver&label=Version&color=bd93f9)](https://github.com/mehfuzh/screenforge/releases/latest)
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20.dmg-bd93f9?logo=apple&logoColor=white)](https://dl.screenforge.studio/latest/ScreenForge.dmg)
 [![CI](https://github.com/mehfuzh/screenforge/actions/workflows/ci.yml/badge.svg)](https://github.com/mehfuzh/screenforge/actions/workflows/ci.yml)
@@ -181,8 +181,15 @@ Editor shortcuts: Space play/pause · ←/→ frame · ⇧←/→ second · S sp
 
 ## License
 
-Proprietary, © Smartloop Inc. See `LICENSE`. Releases up to 0.1.64 were published under
-Apache-2.0 and stay under it.
+ScreenForge is source-available under the [Business Source License 1.1](LICENSE) (`BUSL-1.1`).
+
+- You may read, modify, self-host and use it in production, including inside your company.
+- You may not offer it to third parties as a hosted or embedded commercial product that competes with Smartloop's paid offerings.
+- Each version converts to the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) four years after it is published.
+
+For a commercial license or questions, contact [hello@smartloop.ai](mailto:hello@smartloop.ai).
+
+Releases up to 0.1.64 were published under Apache-2.0 and stay under it.
 
 ## Releasing
 
