@@ -44,7 +44,7 @@ function summary(text) {
 
 const STYLE = `
 :root{--ground:#15161e;--ink:#1e1f29;--line:rgba(248,248,242,.10);--fg:#c9cbdc;--white:#f8f8f2;--dim:#8e90a6;--accent:#ff8a5c;--on-accent:#1e1f29;color-scheme:dark}
-@media (prefers-color-scheme:light){:root{--ground:#ececf1;--ink:#f6f6fa;--line:rgba(30,31,41,.12);--fg:#2e2f3b;--white:#1a1b24;--dim:#5f6175;--accent:#d4442a;--on-accent:#fff;color-scheme:light}}
+:root[data-theme="light"]{--ground:#ececf1;--ink:#f6f6fa;--line:rgba(30,31,41,.12);--fg:#2e2f3b;--white:#1a1b24;--dim:#5f6175;--accent:#d4442a;--on-accent:#fff;color-scheme:light}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--ground);color:var(--fg);font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column}
 header,main,footer{width:100%;max-width:1100px;margin:0 auto;padding:0 16px}
@@ -79,16 +79,35 @@ footer a{color:var(--fg)}
 #qr-view.open{display:flex}
 #qr-view .qr{width:min(72vmin,460px);height:min(72vmin,460px)}
 #qr-view p{color:#f8f8f2;font-size:clamp(16px,2.8vmin,24px);text-align:center;overflow-wrap:anywhere}
+.top{display:flex;align-items:center;gap:10px}
+.mode-toggle{position:relative;display:inline-block;width:56px;height:28px;padding:0;border:1px solid var(--line);background:var(--ink);border-radius:2px;cursor:pointer}
+.mode-toggle svg{position:absolute;top:50%;width:14px;height:14px;transform:translateY(-50%);color:var(--dim);z-index:1;transition:color .18s}
+.mode-toggle .sun{left:6px}
+.mode-toggle .moon{right:6px}
+.mode-toggle .knob{position:absolute;top:2px;left:2px;width:22px;height:22px;background:var(--accent);border-radius:2px;transition:transform .18s ease}
+.mode-toggle[aria-checked="true"] .knob{transform:translateX(28px)}
+.mode-toggle[aria-checked="true"] .moon,.mode-toggle[aria-checked="false"] .sun{color:var(--on-accent)}
+.mode-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.mode-toggle .knob,.mode-toggle svg{transition:none}}
 `;
 
 function page({ title, head = "", body }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-${head}<style>${STYLE}</style></head><body>
-<header><a class="brand" href="/?ref=share"><img src="/favicon.svg" alt="">ScreenForge</a><a class="btn accent" href="/download.html?ref=share">Try ScreenForge</a></header>
+${head}<style>${STYLE}</style>
+<script>
+// the same theme as the rest of screenforge.studio: the choice its toggle stored, else light
+(function(){var t=null;try{t=localStorage.getItem("theme")}catch(e){}if(t!=="light"&&t!=="dark")t="light";document.documentElement.dataset.theme=t})();
+</script></head><body>
+<header><a class="brand" href="/?ref=share"><img src="/favicon.svg" alt="">ScreenForge</a><div class="top"><button type="button" class="mode-toggle" role="switch" aria-checked="false" aria-label="Light theme" title="Switch to dark"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="knob"></span></button><a class="btn accent" href="/download.html?ref=share">Try ScreenForge</a></div></header>
 ${body}
 <footer>Recorded and shared with <a href="/?ref=share">ScreenForge</a>, the screen recorder with an AI editor.</footer>
+<script>
+(function(){var root=document.documentElement,sw=document.querySelector(".mode-toggle");if(!sw)return;
+function paint(){var dark=root.dataset.theme==="dark";sw.setAttribute("aria-checked",String(dark));sw.setAttribute("aria-label",dark?"Dark theme":"Light theme");sw.title=dark?"Switch to light":"Switch to dark"}
+sw.addEventListener("click",function(){var next=root.dataset.theme==="dark"?"light":"dark";root.dataset.theme=next;try{localStorage.setItem("theme",next)}catch(e){}paint()});paint()})();
+</script>
 </body></html>`;
 }
 
