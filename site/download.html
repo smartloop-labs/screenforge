@@ -571,6 +571,7 @@ gtag('config', 'G-ZYRJDJ736V');
   <div class="reqs" aria-label="requirements">
     <span class="badge"><span class="k">arch</span><span class="v">x86_64</span></span>
     <span class="badge"><span class="k">session</span><span class="v">X11 or Wayland</span></span>
+    <span class="badge"><span class="k">glibc</span><span class="v">2.35 or later</span></span>
     <span class="badge"><span class="k">ffmpeg</span><span class="v">included</span></span>
     <span class="badge gold"><span class="k">status</span><span class="v">beta</span></span>
   </div>
@@ -597,6 +598,9 @@ gtag('config', 'G-ZYRJDJ736V');
 <span class="p">$ </span>brew install zot24/tap/screenforge   <span class="c"># Homebrew on Linux</span>
 <span class="p">$ </span>tar xzf ScreenForge-linux-x86_64.tar.gz &amp;&amp; ./ScreenForge/screenforge   <span class="c"># other distros</span>
 <span class="p">$ </span>systemctl --user restart xdg-desktop-portal   <span class="c"># Wayland: no "Share your screen" dialog? restart the portal</span></code></pre>
+  <p>ScreenForge needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36) and the desktop's GTK 3, ALSA, PipeWire and X11 libraries. The .deb pulls them in; for the .tar.gz on Debian or Ubuntu, run:</p>
+<pre><code><span class="p">$ </span>sudo apt install libgtk-3-0t64 libasound2t64 libpipewire-0.3-0t64 libxtst6 libxkbcommon0   <span class="c"># Ubuntu 24.04+, Debian 13+</span>
+<span class="p">$ </span>sudo apt install libgtk-3-0 libasound2 libpipewire-0.3-0 libxtst6 libxkbcommon0   <span class="c"># Ubuntu 22.04, Debian 12</span></code></pre>
   <p>The app runs without a license. Recording and editing are free, and your first 2 exports are too; after that, exporting needs a license from the <a href="pricing.html">pricing page</a>.</p>
   <p style="margin-top:18px">Use Claude Code, Cursor or another AI agent? <a href="agents.html">Connect it to ScreenForge</a> to record and edit from there.</p>
   <p style="margin-top:28px">On a Mac? <a href="#mac" data-os-link="mac">Get the macOS version</a>. On Windows? <a href="#windows" data-os-link="windows">Get the Windows version</a>.</p>
