@@ -84,14 +84,11 @@ version is in the [changelog](https://screenforge.studio/changelog/); the websit
 ffmpeg is included. Editing and exporting work everywhere; system audio and typing-caret zooms
 are macOS-only.
 
-ScreenForge needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36) and the
-desktop's GTK 3, ALSA, PipeWire and X11 libraries. The .deb pulls them in; for the .tar.gz:
+ScreenForge needs glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40) and the
+desktop's GTK 3, ALSA, PipeWire and X11 libraries. On Debian or Ubuntu:
 
 ```sh
-# Ubuntu 24.04+, Debian 13+
 sudo apt install libgtk-3-0t64 libasound2t64 libpipewire-0.3-0t64 libxtst6 libxkbcommon0
-# Ubuntu 22.04, Debian 12
-sudo apt install libgtk-3-0 libasound2 libpipewire-0.3-0 libxtst6 libxkbcommon0
 ```
 
 **Windows (x86_64):** [installer](https://dl.screenforge.studio/latest/ScreenForge-windows-x86_64-setup.exe)
