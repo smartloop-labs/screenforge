@@ -15,7 +15,7 @@ import site_partials  # the shared footer
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'site'
 PAGES = ['index.html', 'pricing.html', 'download.html', 'comparison.html']
 ENGLISH_ONLY = ['privacy.html', 'terms.html', 'contact.html', 'success.html', '404.html']
-ASSETS = ['favicon.ico', 'favicon.svg', 'favicon-512.png', 'icon.png', 'apple-touch-icon.png', 'agent-demo-v1.mp4', 'agent-demo-poster-v1.jpg', 'app-demo-v1.mp4', 'app-demo-poster-v1.jpg']
+ASSETS = ['favicon.ico', 'favicon.svg', 'favicon-512.png', 'icon.png', 'apple-touch-icon.png', 'agent-demo-v2.mp4', 'agent-demo-poster-v2.jpg', 'app-demo-v1.mp4', 'app-demo-poster-v1.jpg']
 
 
 def must(s, old, new, count=1):
